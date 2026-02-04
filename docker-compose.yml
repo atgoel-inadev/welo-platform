@@ -1,0 +1,236 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: welo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: welo_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - welo-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: welo-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - welo-network
+
+  # Kafka Message Broker (KRaft mode - no Zookeeper needed)
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: welo-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - welo-network
+
+  # Workflow Engine Service
+  workflow-engine:
+    build:
+      context: .
+      dockerfile: ./docker/workflow-engine/Dockerfile
+    container_name: welo-workflow-engine
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: welo_platform
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: workflow-engine
+      KAFKA_GROUP_ID: workflow-engine-group
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./apps/workflow-engine:/app/apps/workflow-engine
+      - ./libs:/app/libs
+      - /app/node_modules
+    networks:
+      - welo-network
+    command: npm run start:workflow-engine
+
+  # Auth Service
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./docker/auth-service/Dockerfile
+    container_name: welo-auth-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3002
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: welo_platform
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: your-secret-key-change-in-production
+      JWT_EXPIRES_IN: 1h
+      REFRESH_TOKEN_EXPIRES_IN: 7d
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: auth-service
+      KAFKA_GROUP_ID: auth-service-group
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./apps/auth-service:/app/apps/auth-service
+      - ./libs:/app/libs
+      - /app/node_modules
+    networks:
+      - welo-network
+    command: npm run start:auth-service
+
+  # Task Management Service
+  task-management:
+    build:
+      context: .
+      dockerfile: ./docker/task-management/Dockerfile
+    container_name: welo-task-management
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3003
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: welo_platform
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: task-management
+      KAFKA_GROUP_ID: task-management-group
+    ports:
+      - "3003:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./apps/task-management:/app/apps/task-management
+      - ./libs:/app/libs
+      - /app/node_modules
+    networks:
+      - welo-network
+    command: npm run start:task-management
+
+  # Project Management Service
+  project-management:
+    build:
+      context: .
+      dockerfile: ./docker/project-management/Dockerfile
+    container_name: welo-project-management
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3004
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: welo_platform
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: project-management
+      KAFKA_GROUP_ID: project-management-group
+    ports:
+      - "3004:3004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./apps/project-management:/app/apps/project-management
+      - ./libs:/app/libs
+      - /app/node_modules
+    networks:
+      - welo-network
+    command: npm run start:project-management
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  kafka_data:
+    driver: local
+
+networks:
+  welo-network:
+    driver: bridge
