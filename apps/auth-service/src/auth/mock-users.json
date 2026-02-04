@@ -1,0 +1,85 @@
+[
+  {
+    "id": "user-admin-001",
+    "email": "admin@welo.com",
+    "password": "admin123",
+    "name": "Admin User",
+    "role": "ADMIN",
+    "permissions": ["*"],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "id": "user-ops-001",
+    "email": "ops@welo.com",
+    "password": "ops123",
+    "name": "Operations Manager",
+    "role": "OPS_MANAGER",
+    "permissions": [
+      "project.create",
+      "project.read",
+      "project.update",
+      "project.delete",
+      "batch.create",
+      "batch.read",
+      "batch.update",
+      "workflow.create",
+      "workflow.read",
+      "workflow.update",
+      "task.read",
+      "task.assign",
+      "user.read"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "id": "user-annotator-001",
+    "email": "annotator@welo.com",
+    "password": "annotator123",
+    "name": "John Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "id": "user-reviewer-001",
+    "email": "reviewer@welo.com",
+    "password": "reviewer123",
+    "name": "Jane Reviewer",
+    "role": "REVIEWER",
+    "permissions": [
+      "task.read",
+      "annotation.read",
+      "annotation.review",
+      "annotation.approve",
+      "annotation.reject",
+      "quality.read"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "id": "user-customer-001",
+    "email": "customer@welo.com",
+    "password": "customer123",
+    "name": "Customer User",
+    "role": "CUSTOMER",
+    "permissions": [
+      "project.read",
+      "batch.read",
+      "report.read",
+      "export.download"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-01T00:00:00Z"
+  }
+]

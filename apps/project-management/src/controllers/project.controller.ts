@@ -55,6 +55,14 @@ export class ProjectController {
     return this.projectService.deleteProject(id);
   }
 
+  @Post(':id/clone')
+  async cloneProject(
+    @Param('id') id: string,
+    @Body() cloneDto: { newName: string; copyTasks?: boolean },
+  ) {
+    return this.projectService.cloneProject(id, cloneDto);
+  }
+
   // Annotation Questions Management
   @Post(':id/annotation-questions')
   async addAnnotationQuestions(

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthController } from './auth/auth.controller';
+import { AuthModule } from './auth/auth.module';
 import {
   Workflow,
   WorkflowInstance,
@@ -61,7 +61,8 @@ import {
       }),
       inject: [ConfigService],
     }),
+    AuthModule,
   ],
-  controllers: [AuthController],
+  controllers: [],
 })
 export class AppModule {}

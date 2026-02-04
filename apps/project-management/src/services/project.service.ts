@@ -238,4 +238,46 @@ export class ProjectService {
       },
     };
   }
+
+  /**
+   * Clone a project
+   */
+  async cloneProject(projectId: string, data: { newName: string; copyTasks?: boolean }) {
+    const originalProject = await this.projectRepository.findOne({
+      where: { id: projectId },
+      relations: ['customer', 'creator'],
+    });
+
+    if (!originalProject) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    // Create cloned project
+    const clonedProject = this.projectRepository.create({
+      name: data.newName,
+      customerId: originalProject.customerId,
+      description: originalProject.description,
+      projectType: originalProject.projectType,
+      status: ProjectStatus.DRAFT,
+      createdBy: originalProject.createdBy,
+      configuration: originalProject.configuration,
+      supportedFileTypes: originalProject.supportedFileTypes,
+    });
+
+    const savedProject = await this.projectRepository.save(clonedProject);
+
+    // TODO: Copy tasks if requested
+    if (data.copyTasks) {
+      // Implementation for copying tasks
+    }
+
+    return {
+      success: true,
+      data: await this.projectRepository.findOne({
+        where: { id: savedProject.id },
+        relations: ['customer', 'creator'],
+      }),
+      message: 'Project cloned successfully',
+    };
+  }
 }

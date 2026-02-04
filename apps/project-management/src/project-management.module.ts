@@ -2,10 +2,12 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProjectController } from './controllers/project.controller';
 import { BatchController } from './controllers/batch.controller';
+import { CustomerController } from './controllers/customer.controller';
 import { ProjectService } from './services/project.service';
 import { WorkflowConfigService } from './services/workflow-config.service';
 import { AnnotationQuestionService } from './services/annotation-question.service';
 import { BatchService } from './services/batch.service';
+import { CustomerService } from './services/customer.service';
 import { KafkaModule } from './kafka/kafka.module';
 import {
   Project,
@@ -55,7 +57,7 @@ import {
     ]),
     KafkaModule,
   ],
-  controllers: [ProjectController, BatchController],
-  providers: [ProjectService, WorkflowConfigService, AnnotationQuestionService, BatchService],
+  controllers: [ProjectController, BatchController, CustomerController],
+  providers: [ProjectService, WorkflowConfigService, AnnotationQuestionService, BatchService, CustomerService],
 })
 export class ProjectManagementModule {}

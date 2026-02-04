@@ -581,24 +581,61 @@ export class TaskService {
   private async calculateConsensus(taskId: string): Promise<number> {
     const annotations = await this.annotationRepository.find({
       where: { taskId },
+      relations: ['responses'],
     });
 
     if (annotations.length < 2) {
       return 100; // Single annotation, full consensus
     }
 
-    // Simple consensus calculation - compare annotation data
-    // This is a placeholder - real implementation would depend on annotation structure
-    const firstAnnotation = JSON.stringify(annotations[0].annotationData);
-    let agreements = 0;
+    // Get all annotation responses for comparison
+    const responses = await this.responseRepository.find({
+      where: { taskId },
+      order: { questionId: 'ASC' },
+    });
 
-    for (let i = 1; i < annotations.length; i++) {
-      const currentAnnotation = JSON.stringify(annotations[i].annotationData);
-      if (firstAnnotation === currentAnnotation) {
-        agreements++;
+    // Group responses by question
+    const responsesByQuestion = responses.reduce((acc, response) => {
+      if (!acc[response.questionId]) {
+        acc[response.questionId] = [];
+      }
+      acc[response.questionId].push(response);
+      return acc;
+    }, {} as Record<string, typeof responses>);
+
+    // Calculate agreement per question
+    const questionScores: number[] = [];
+    
+    for (const [questionId, questionResponses] of Object.entries(responsesByQuestion)) {
+      if (questionResponses.length < 2) {
+        questionScores.push(100);
+        continue;
+      }
+
+      // Count matching responses
+      const responseValues = questionResponses.map(r => JSON.stringify(r.response));
+      const uniqueResponses = new Set(responseValues);
+      
+      // If all responses are identical, perfect consensus
+      if (uniqueResponses.size === 1) {
+        questionScores.push(100);
+      } else {
+        // Calculate percentage of majority response
+        const valueCounts = responseValues.reduce((acc, val) => {
+          acc[val] = (acc[val] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+        
+        const maxCount = Math.max(...Object.values(valueCounts));
+        const consensusPercentage = (maxCount / responseValues.length) * 100;
+        questionScores.push(consensusPercentage);
       }
     }
 
-    return (agreements / (annotations.length - 1)) * 100;
+    // Return average consensus across all questions
+    const avgConsensus = questionScores.reduce((sum, score) => sum + score, 0) / questionScores.length;
+    
+    this.logger.debug(`Consensus calculated for task ${taskId}: ${avgConsensus.toFixed(2)}%`);
+    return Math.round(avgConsensus * 100) / 100; // Round to 2 decimal places
   }
 }
