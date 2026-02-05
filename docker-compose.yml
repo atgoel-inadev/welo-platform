@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -80,7 +78,7 @@ services:
     container_name: welo-workflow-engine
     restart: unless-stopped
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       PORT: 3001
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
@@ -101,13 +99,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-    volumes:
-      - ./apps/workflow-engine:/app/apps/workflow-engine
-      - ./libs:/app/libs
-      - /app/node_modules
     networks:
       - welo-network
-    command: npm run start:workflow-engine
 
   # Auth Service
   auth-service:
@@ -117,7 +110,7 @@ services:
     container_name: welo-auth-service
     restart: unless-stopped
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       PORT: 3002
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
@@ -141,13 +134,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-    volumes:
-      - ./apps/auth-service:/app/apps/auth-service
-      - ./libs:/app/libs
-      - /app/node_modules
     networks:
       - welo-network
-    command: npm run start:auth-service
 
   # Task Management Service
   task-management:
@@ -157,7 +145,7 @@ services:
     container_name: welo-task-management
     restart: unless-stopped
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       PORT: 3003
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
@@ -178,13 +166,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-    volumes:
-      - ./apps/task-management:/app/apps/task-management
-      - ./libs:/app/libs
-      - /app/node_modules
     networks:
       - welo-network
-    command: npm run start:task-management
 
   # Project Management Service
   project-management:
@@ -194,7 +177,7 @@ services:
     container_name: welo-project-management
     restart: unless-stopped
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       PORT: 3004
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -215,13 +198,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-    volumes:
-      - ./apps/project-management:/app/apps/project-management
-      - ./libs:/app/libs
-      - /app/node_modules
     networks:
       - welo-network
-    command: npm run start:project-management
 
 volumes:
   postgres_data:

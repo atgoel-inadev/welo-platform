@@ -128,6 +128,28 @@ export class Task extends BaseEntity {
   @Column({ name: 'completed_assignments', type: 'int', default: 0 })
   completedAssignments: number; // How many have completed
 
+  @Column({ name: 'annotation_responses', type: 'jsonb', nullable: true })
+  annotationResponses: Array<{
+    questionId: string;
+    response: any;
+    timestamp: string;
+    annotatorId: string;
+  }>;
+
+  @Column({ name: 'extra_widget_data', type: 'jsonb', nullable: true })
+  extraWidgetData: Record<string, any>;
+
+  @Column({ name: 'review_data', type: 'jsonb', nullable: true })
+  reviewData: Array<{
+    reviewLevel: number;
+    reviewerId: string;
+    decision: 'APPROVED' | 'REJECTED' | 'NEEDS_REVISION';
+    qualityScore?: number;
+    comments?: string;
+    extraWidgetData?: Record<string, any>;
+    timestamp: string;
+  }>;
+
   // Relations
   @ManyToOne(() => Batch, (batch) => batch.tasks)
   @JoinColumn({ name: 'batch_id' })

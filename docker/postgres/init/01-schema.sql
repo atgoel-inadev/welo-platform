@@ -206,6 +206,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     due_date TIMESTAMP,
     estimated_duration INTEGER,
     actual_duration INTEGER,
+    annotation_responses JSONB,
+    extra_widget_data JSONB,
+    review_data JSONB,
     metadata JSONB,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -1,6 +1,6 @@
 [
   {
-    "id": "user-admin-001",
+    "id": "550e8400-e29b-41d4-a716-446655440001",
     "email": "admin@welo.com",
     "password": "admin123",
     "name": "Admin User",
@@ -10,11 +10,11 @@
     "createdAt": "2026-01-01T00:00:00Z"
   },
   {
-    "id": "user-ops-001",
+    "id": "550e8400-e29b-41d4-a716-446655440002",
     "email": "ops@welo.com",
     "password": "ops123",
     "name": "Operations Manager",
-    "role": "OPS_MANAGER",
+    "role": "PROJECT_MANAGER",
     "permissions": [
       "project.create",
       "project.read",
@@ -34,7 +34,7 @@
     "createdAt": "2026-01-01T00:00:00Z"
   },
   {
-    "id": "user-annotator-001",
+    "id": "550e8400-e29b-41d4-a716-446655440003",
     "email": "annotator@welo.com",
     "password": "annotator123",
     "name": "John Annotator",
@@ -51,7 +51,7 @@
     "createdAt": "2026-01-01T00:00:00Z"
   },
   {
-    "id": "user-reviewer-001",
+    "id": "550e8400-e29b-41d4-a716-446655440004",
     "email": "reviewer@welo.com",
     "password": "reviewer123",
     "name": "Jane Reviewer",
@@ -68,7 +68,7 @@
     "createdAt": "2026-01-01T00:00:00Z"
   },
   {
-    "id": "user-customer-001",
+    "id": "550e8400-e29b-41d4-a716-446655440005",
     "email": "customer@welo.com",
     "password": "customer123",
     "name": "Customer User",

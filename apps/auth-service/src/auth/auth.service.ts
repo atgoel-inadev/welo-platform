@@ -246,7 +246,7 @@ export class AuthService {
     switch (role) {
       case UserRole.ADMIN:
         return ['*'];
-      case UserRole.OPS_MANAGER:
+      case UserRole.PROJECT_MANAGER:
         return [
           'project.create',
           'project.read',

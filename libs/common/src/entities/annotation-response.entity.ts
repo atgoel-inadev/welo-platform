@@ -54,7 +54,7 @@ export class AnnotationResponse extends BaseEntity {
   @JoinColumn({ name: 'task_id' })
   task: Task;
 
-  @ManyToOne(() => Annotation, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Annotation, (annotation) => annotation.responses, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'annotation_id' })
   annotation: Annotation;
 

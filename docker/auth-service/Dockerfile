@@ -1,19 +1,22 @@
 # Multi-stage build for Welo Auth Service
+# syntax=docker/dockerfile:1.4
 
 # Stage 1: Build
 FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files first (best layer caching)
 COPY package*.json ./
-COPY tsconfig*.json ./
-COPY nest-cli.json ./
 
-# Install dependencies
-RUN npm ci
+# Install ALL dependencies with cache mount
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
-# Copy source code
+# Copy config files
+COPY tsconfig*.json nest-cli.json ./
+
+# Copy only necessary source code
 COPY libs/ ./libs/
 COPY apps/auth-service/ ./apps/auth-service/
 
@@ -28,25 +31,22 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install production dependencies only
-RUN npm ci --only=production && npm cache clean --force
+# Install production dependencies with cache mount
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist/apps/auth-service ./dist
 
-# Create a non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001 && \
-    chown -R nodejs:nodejs /app
-
-USER nodejs
+# Copy mock users data file
+COPY --from=builder /app/apps/auth-service/src/auth/mock-users.json ./dist/
 
 # Expose the service port
 EXPOSE 3002
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3002/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD node -e "require('http').get('http://localhost:3002/api/v1/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Start the application
 CMD ["node", "dist/main.js"]

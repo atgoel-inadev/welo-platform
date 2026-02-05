@@ -4,6 +4,7 @@ import { Repository, In, FindOptionsWhere } from 'typeorm';
 import { Task, Assignment, Annotation, Project, Batch, Workflow, User, Queue, AnnotationResponse } from '@app/common/entities';
 import { TaskStatus, TaskType, AssignmentStatus, AssignmentMethod, WorkflowStage } from '@app/common/enums';
 import { KafkaService } from '../kafka/kafka.service';
+import { TaskRenderingService } from '../services/task-rendering.service';
 import {
   CreateTaskDto,
   CreateTaskBulkDto,
@@ -41,6 +42,7 @@ export class TaskService {
     @InjectRepository(Queue)
     private queueRepository: Repository<Queue>,
     private kafkaService: KafkaService,
+    private taskRenderingService: TaskRenderingService,
   ) {}
 
   async createTask(dto: CreateTaskDto): Promise<Task> {
@@ -637,5 +639,49 @@ export class TaskService {
     
     this.logger.debug(`Consensus calculated for task ${taskId}: ${avgConsensus.toFixed(2)}%`);
     return Math.round(avgConsensus * 100) / 100; // Round to 2 decimal places
+  }
+
+  /**
+   * Get task render configuration
+   * Delegates to TaskRenderingService
+   */
+  async getTaskRenderConfig(taskId: string, userId: string): Promise<any> {
+    return this.taskRenderingService.getTaskRenderConfig(taskId, userId);
+  }
+
+  /**
+   * Save annotation response
+   * Delegates to TaskRenderingService
+   */
+  async saveAnnotation(taskId: string, userId: string, dto: any): Promise<void> {
+    return this.taskRenderingService.saveAnnotationResponse(
+      taskId,
+      userId,
+      dto.responses,
+      dto.extraWidgetData,
+    );
+  }
+
+  /**
+   * Save review decision
+   * Delegates to TaskRenderingService
+   */
+  async saveReview(taskId: string, userId: string, dto: any): Promise<void> {
+    return this.taskRenderingService.saveReviewDecision(
+      taskId,
+      userId,
+      dto.decision,
+      dto.comments,
+      dto.qualityScore,
+      dto.extraWidgetData,
+    );
+  }
+
+  /**
+   * Get annotation history
+   * Delegates to TaskRenderingService
+   */
+  async getAnnotationHistory(taskId: string): Promise<any> {
+    return this.taskRenderingService.getTaskAnnotationHistory(taskId);
   }
 }

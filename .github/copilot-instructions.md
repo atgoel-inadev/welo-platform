@@ -188,7 +188,56 @@ Copilot MUST:
 
 ---
 
-## 12. Default Assumptions
+## 13. Docker & Service Management Rules (CRITICAL)
+
+### Build and Deployment Strategy
+- **NEVER** run `docker compose down` unless absolutely necessary (destroys all containers)
+- **ALWAYS** build and restart ONLY the service being modified
+- Use targeted commands:
+  - Build single service: `docker compose build <service-name>`
+  - Restart single service: `docker compose up -d <service-name>`
+  - View logs: `docker compose logs -f <service-name>`
+
+### Service-Specific Operations
+- When fixing code in auth-service → Only rebuild/restart auth-service
+- When fixing code in project-management → Only rebuild/restart project-management
+- Infrastructure services (postgres, redis, kafka) should rarely be restarted
+- Use `--no-deps` flag when recreating services to avoid restarting dependencies
+
+### Build Optimization
+- **DON'T** use `--no-cache` unless debugging build issues
+- **DO** rely on Docker layer caching for speed
+- BuildKit cache mounts are configured → builds are incremental
+- First build: ~2-3 min per service, Incremental: ~10-30 seconds
+
+### Examples
+```bash
+# ✅ CORRECT: Fix and restart single service
+docker compose build auth-service
+docker compose up -d auth-service
+
+# ✅ CORRECT: Restart without rebuild (env changes)
+docker compose restart auth-service
+
+# ✅ CORRECT: Recreate single service
+docker compose up -d --force-recreate --no-deps auth-service
+
+# ❌ WRONG: Destroys everything
+docker compose down
+docker compose up -d
+
+# ❌ WRONG: Rebuilds everything
+docker compose build --no-cache
+```
+
+### Reference Documentation
+- See `DOCKER_BUILD_GUIDE.md` for detailed scenarios and best practices
+- All Dockerfiles use BuildKit cache mounts for npm packages
+- Multi-stage builds minimize production image size
+
+---
+
+## 14. Default Assumptions
 
 Unless explicitly stated otherwise:
 - API style is REST

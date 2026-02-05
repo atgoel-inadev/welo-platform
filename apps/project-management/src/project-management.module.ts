@@ -3,9 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProjectController } from './controllers/project.controller';
 import { BatchController } from './controllers/batch.controller';
 import { CustomerController } from './controllers/customer.controller';
+import { UIConfigurationController } from './controllers/ui-configuration.controller';
+import { HealthController } from './controllers/health.controller';
 import { ProjectService } from './services/project.service';
 import { WorkflowConfigService } from './services/workflow-config.service';
 import { AnnotationQuestionService } from './services/annotation-question.service';
+import { UIConfigurationService } from './services/ui-configuration.service';
 import { BatchService } from './services/batch.service';
 import { CustomerService } from './services/customer.service';
 import { KafkaModule } from './kafka/kafka.module';
@@ -14,11 +17,21 @@ import {
   Customer,
   User,
   Workflow,
+  WorkflowInstance,
+  StateTransition,
   Task,
   Assignment,
-  ReviewApproval,
+  Annotation,
   AnnotationResponse,
+  ReviewApproval,
+  QualityCheck,
   Batch,
+  Queue,
+  Export,
+  AuditLog,
+  Notification,
+  Comment,
+  Template,
 } from '@app/common/entities';
 
 @Module({
@@ -35,11 +48,21 @@ import {
         Customer,
         User,
         Workflow,
+        WorkflowInstance,
+        StateTransition,
         Task,
         Assignment,
-        ReviewApproval,
+        Annotation,
         AnnotationResponse,
+        ReviewApproval,
+        QualityCheck,
         Batch,
+        Queue,
+        Export,
+        AuditLog,
+        Notification,
+        Comment,
+        Template,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
@@ -57,7 +80,7 @@ import {
     ]),
     KafkaModule,
   ],
-  controllers: [ProjectController, BatchController, CustomerController],
-  providers: [ProjectService, WorkflowConfigService, AnnotationQuestionService, BatchService, CustomerService],
+  controllers: [ProjectController, BatchController, CustomerController, UIConfigurationController, HealthController],
+  providers: [ProjectService, WorkflowConfigService, AnnotationQuestionService, UIConfigurationService, BatchService, CustomerService],
 })
 export class ProjectManagementModule {}

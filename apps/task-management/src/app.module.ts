@@ -3,7 +3,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TaskController } from './task/task.controller';
 import { TaskService } from './task/task.service';
+import { TaskRenderingService } from './services/task-rendering.service';
 import { BatchController } from './batch/batch.controller';
+import { HealthController } from './health/health.controller';
 import { KafkaModule } from './kafka/kafka.module';
 import {
   Workflow,
@@ -18,6 +20,7 @@ import {
   Annotation,
   AnnotationResponse,
   QualityCheck,
+  ReviewApproval,
   Queue,
   Export,
   AuditLog,
@@ -54,6 +57,7 @@ import {
           Annotation,
           AnnotationResponse,
           QualityCheck,
+          ReviewApproval,
           Queue,
           Export,
           AuditLog,
@@ -79,7 +83,7 @@ import {
     ]),
     KafkaModule,
   ],
-  controllers: [TaskController, BatchController],
-  providers: [TaskService],
+  controllers: [TaskController, BatchController, HealthController],
+  providers: [TaskService, TaskRenderingService],
 })
 export class AppModule {}

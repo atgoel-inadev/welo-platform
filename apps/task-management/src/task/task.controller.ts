@@ -16,7 +16,7 @@ import {
 
 @ApiTags('tasks')
 @ApiBearerAuth()
-@Controller('api/v1/tasks')
+@Controller('tasks')
 export class TaskController {
   constructor(private readonly taskService: TaskService) {}
 
@@ -127,5 +127,63 @@ export class TaskController {
   @ApiResponse({ status: 200, description: 'Bulk action completed' })
   async bulkAction(@Body() dto: BulkTaskActionDto) {
     return this.taskService.bulkAction(dto);
+  }
+
+  @Get(':id/render-config')
+  @ApiOperation({
+    summary: 'Get task render configuration',
+    description: 'Returns complete configuration for rendering task UI (file viewer + questions + extra widgets)',
+  })
+  @ApiResponse({ status: 200, description: 'Render configuration retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  async getTaskRenderConfig(
+    @Param('id') id: string,
+    @Query('userId') userId: string,
+  ) {
+    // TODO: Get userId from JWT token instead of query param
+    return this.taskService.getTaskRenderConfig(id, userId);
+  }
+
+  @Post(':id/annotation')
+  @ApiOperation({
+    summary: 'Save annotation response',
+    description: 'Saves annotator responses to annotation questions + extra widget data',
+  })
+  @ApiResponse({ status: 200, description: 'Annotation saved successfully' })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  async saveAnnotation(
+    @Param('id') id: string,
+    @Query('userId') userId: string,
+    @Body() dto: any, // TODO: Import SaveAnnotationDto
+  ) {
+    // TODO: Get userId from JWT token
+    return this.taskService.saveAnnotation(id, userId, dto);
+  }
+
+  @Post(':id/review')
+  @ApiOperation({
+    summary: 'Save review decision',
+    description: 'Saves reviewer decision (approve/reject) + quality score + review widget data',
+  })
+  @ApiResponse({ status: 200, description: 'Review saved successfully' })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  async saveReview(
+    @Param('id') id: string,
+    @Query('userId') userId: string,
+    @Body() dto: any, // TODO: Import SaveReviewDto
+  ) {
+    // TODO: Get userId from JWT token
+    return this.taskService.saveReview(id, userId, dto);
+  }
+
+  @Get(':id/annotation-history')
+  @ApiOperation({
+    summary: 'Get task annotation history',
+    description: 'Returns complete history of annotations and reviews for audit/tracking',
+  })
+  @ApiResponse({ status: 200, description: 'History retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  async getAnnotationHistory(@Param('id') id: string) {
+    return this.taskService.getAnnotationHistory(id);
   }
 }

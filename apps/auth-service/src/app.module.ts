@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { HealthController } from './health/health.controller';
 import {
   Workflow,
   WorkflowInstance,
@@ -13,7 +14,9 @@ import {
   User,
   Assignment,
   Annotation,
+  AnnotationResponse,
   QualityCheck,
+  ReviewApproval,
   Queue,
   Export,
   AuditLog,
@@ -48,7 +51,9 @@ import {
           User,
           Assignment,
           Annotation,
+          AnnotationResponse,
           QualityCheck,
+          ReviewApproval,
           Queue,
           Export,
           AuditLog,
@@ -56,6 +61,7 @@ import {
           Comment,
           Template,
         ],
+        autoLoadEntities: true,
         synchronize: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
       }),
@@ -63,6 +69,6 @@ import {
     }),
     AuthModule,
   ],
-  controllers: [],
+  controllers: [HealthController],
 })
 export class AppModule {}

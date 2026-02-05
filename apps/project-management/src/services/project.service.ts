@@ -259,9 +259,7 @@ export class ProjectService {
       description: originalProject.description,
       projectType: originalProject.projectType,
       status: ProjectStatus.DRAFT,
-      createdBy: originalProject.createdBy,
       configuration: originalProject.configuration,
-      supportedFileTypes: originalProject.supportedFileTypes,
     });
 
     const savedProject = await this.projectRepository.save(clonedProject);
