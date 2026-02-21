@@ -9,7 +9,7 @@ import {
   PullNextTaskDto,
 } from '../dto/batch.dto';
 
-@Controller('api/v1/batches')
+@Controller('batches')
 export class BatchController {
   constructor(private readonly batchService: BatchService) {}
 
@@ -51,5 +51,28 @@ export class BatchController {
   @Post('pull-next-task')
   async pullNextTask(@Body() dto: PullNextTaskDto) {
     return this.batchService.pullNextTask(dto);
+  }
+
+  /**
+   * Auto-assign unassigned tasks in a batch to eligible annotators.
+   * Supports AUTO_ROUND_ROBIN (default), AUTO_WORKLOAD_BASED, AUTO_SKILL_BASED.
+   */
+  @Post(':id/auto-assign')
+  async autoAssignTasksInBatch(
+    @Param('id') batchId: string,
+    @Body() body: { assignmentMethod?: string },
+  ) {
+    const method = (body?.assignmentMethod || 'AUTO_ROUND_ROBIN') as
+      | 'AUTO_ROUND_ROBIN'
+      | 'AUTO_WORKLOAD_BASED'
+      | 'AUTO_SKILL_BASED';
+    
+    // Get unassigned tasks for this batch
+    const tasks = await this.batchService.getUnassignedTasksForBatch(batchId);
+    
+    // Auto-assign them
+    await this.batchService.autoAssignTasks(tasks, method);
+    
+    return { success: true, assignedCount: tasks.length };
   }
 }

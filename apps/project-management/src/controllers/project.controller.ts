@@ -2,11 +2,14 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestj
 import { ProjectService } from '../services/project.service';
 import { WorkflowConfigService } from '../services/workflow-config.service';
 import { AnnotationQuestionService } from '../services/annotation-question.service';
+import { ProjectTeamService } from '../services/project-team.service';
 import {
   CreateProjectDto,
   UpdateProjectDto,
   AddAnnotationQuestionsDto,
   ConfigureWorkflowDto,
+  AssignUserToProjectDto,
+  UpdateProjectTeamMemberDto,
 } from '../dto';
 
 @Controller('projects')
@@ -15,6 +18,7 @@ export class ProjectController {
     private readonly projectService: ProjectService,
     private readonly workflowConfigService: WorkflowConfigService,
     private readonly questionService: AnnotationQuestionService,
+    private readonly projectTeamService: ProjectTeamService,
   ) {}
 
   @Get()
@@ -150,5 +154,39 @@ export class ProjectController {
   @Get(':id/supported-file-types')
   async getSupportedFileTypes(@Param('id') id: string) {
     return this.projectService.getSupportedFileTypes(id);
+  }
+
+  // Project Team Management
+  @Get(':id/team')
+  async getProjectTeam(@Param('id') id: string) {
+    return this.projectTeamService.getProjectTeam(id);
+  }
+
+  @Post(':id/team')
+  async assignUserToProject(
+    @Param('id') projectId: string,
+    @Body() dto: Omit<AssignUserToProjectDto, 'projectId'>,
+  ) {
+    return this.projectTeamService.assignUserToProject({
+      ...dto,
+      projectId,
+    });
+  }
+
+  @Patch(':id/team/:userId')
+  async updateTeamMember(
+    @Param('id') projectId: string,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateProjectTeamMemberDto,
+  ) {
+    return this.projectTeamService.updateTeamMember(projectId, userId, dto);
+  }
+
+  @Delete(':id/team/:userId')
+  async removeUserFromProject(
+    @Param('id') projectId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.projectTeamService.removeUserFromProject(projectId, userId);
   }
 }

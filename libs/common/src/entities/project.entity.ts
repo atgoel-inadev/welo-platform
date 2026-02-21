@@ -7,6 +7,7 @@ import { Workflow } from './workflow.entity';
 import { Batch } from './batch.entity';
 import { Task } from './task.entity';
 import { Queue } from './queue.entity';
+import { ProjectTeamMember } from './project-team-member.entity';
 
 @Entity('projects')
 @Index(['customerId'])
@@ -127,4 +128,7 @@ export class Project extends BaseEntity {
 
   @OneToMany(() => Workflow, (workflow) => workflow.project)
   workflows: Workflow[];
+
+  @OneToMany(() => ProjectTeamMember, (teamMember) => teamMember.project)
+  teamMembers: ProjectTeamMember[];
 }

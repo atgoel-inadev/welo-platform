@@ -7,6 +7,7 @@ import { QualityCheck } from './quality-check.entity';
 import { AuditLog } from './audit-log.entity';
 import { Notification } from './notification.entity';
 import { StateTransition } from './state-transition.entity';
+import { ProjectTeamMember } from './project-team-member.entity';
 
 @Entity('users')
 @Index(['email'], { unique: true })
@@ -75,4 +76,7 @@ export class User extends BaseEntity {
 
   @OneToMany(() => StateTransition, (stateTransition) => stateTransition.user)
   stateTransitions: StateTransition[];
+
+  @OneToMany(() => ProjectTeamMember, (teamMember) => teamMember.user)
+  projectTeamMemberships: ProjectTeamMember[];
 }

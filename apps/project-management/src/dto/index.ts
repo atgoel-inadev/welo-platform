@@ -13,6 +13,10 @@ export class CreateProjectDto {
   supportedFileTypes?: string[];
 }
 
+export * from './project-team.dto';
+export * from './batch.dto';
+export * from './ui-configuration.dto';
+
 export class UpdateProjectDto {
   name?: string;
   description?: string;

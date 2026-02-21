@@ -1,8 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { Batch, Task, Project, Assignment, User } from '@app/common/entities';
-import { BatchStatus, TaskStatus, TaskType, AssignmentStatus, AssignmentMethod, WorkflowStage, UserStatus } from '@app/common/enums';
+import { Batch, Task, Project, Assignment, User, Workflow } from '@app/common/entities';
+import { BatchStatus, TaskStatus, TaskType, AssignmentStatus, AssignmentMethod, WorkflowStage, UserStatus, WorkflowStatus } from '@app/common/enums';
 import { KafkaService } from '../kafka/kafka.service';
 import { CreateBatchDto, UpdateBatchDto, AllocateFilesDto, AllocateFolderDto, AssignTaskDto, PullNextTaskDto } from '../dto/batch.dto';
 
@@ -21,6 +21,8 @@ export class BatchService {
     private assignmentRepository: Repository<Assignment>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Workflow)
+    private workflowRepository: Repository<Workflow>,
     private kafkaService: KafkaService,
   ) {}
 
@@ -152,6 +154,15 @@ export class BatchService {
     // This would require file system access or cloud storage integration
     // For now, this is a placeholder that would be implemented based on storage backend
     throw new BadRequestException('Folder allocation requires storage backend integration');
+  }
+
+  async getUnassignedTasksForBatch(batchId: string): Promise<Task[]> {
+    return this.taskRepository.find({
+      where: {
+        batchId,
+        status: TaskStatus.QUEUED,
+      },
+    });
   }
 
   async autoAssignTasks(tasks: Task[], method: string): Promise<void> {
@@ -463,10 +474,72 @@ export class BatchService {
     };
   }
 
-  private async getProjectWorkflow(projectId: string): Promise<any> {
-    // This would fetch the workflow for the project
-    // For now, returning a default workflow ID
-    return { id: 'default-workflow-id' };
+  private async getProjectWorkflow(projectId: string): Promise<Workflow> {
+    const project = await this.projectRepository.findOne({
+      where: { id: projectId },
+      relations: ['defaultWorkflow'],
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project ${projectId} not found`);
+    }
+
+    // If project has a default workflow, use it
+    if (project.defaultWorkflowId) {
+      const workflow = await this.workflowRepository.findOne({
+        where: { id: project.defaultWorkflowId },
+      });
+      if (workflow) {
+        return workflow;
+      }
+    }
+
+    // Otherwise, find or create a workflow for this project
+    let workflow = await this.workflowRepository.findOne({
+      where: { projectId, status: WorkflowStatus.ACTIVE },
+    });
+
+    if (!workflow) {
+      // Create a default workflow for this project
+      workflow = this.workflowRepository.create({
+        projectId,
+        name: `${project.name} - Default Workflow`,
+        description: 'Auto-generated default workflow',
+        version: 1,
+        status: WorkflowStatus.ACTIVE,
+        isTemplate: false,
+        createdBy: project.createdBy,
+        xstateDefinition: {
+          id: 'taskWorkflow',
+          initial: 'queued',
+          states: {
+            queued: {
+              on: { ASSIGN: 'assigned' },
+            },
+            assigned: {
+              on: { START: 'in_progress', UNASSIGN: 'queued' },
+            },
+            in_progress: {
+              on: { SUBMIT: 'submitted', CANCEL: 'queued' },
+            },
+            submitted: {
+              on: { APPROVE: 'approved', REJECT: 'rejected' },
+            },
+            approved: {
+              type: 'final' as any,
+            },
+            rejected: {
+              on: { REASSIGN: 'queued' },
+            },
+          },
+        },
+      });
+
+      workflow = await this.workflowRepository.save(workflow);
+      this.logger.log(`Created default workflow ${workflow.id} for project ${projectId}`);
+    }
+
+    return workflow;
   }
 
   async completeBatch(batchId: string): Promise<Batch> {

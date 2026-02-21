@@ -97,3 +97,58 @@ export class TokenPayload {
   role: UserRole;
   permissions: string[];
 }
+
+/**
+ * User Management DTOs
+ */
+export class CreateUserDto {
+  @ApiProperty({ example: 'user@welo.com' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: 'password123' })
+  @IsString()
+  @MinLength(6)
+  password: string;
+
+  @ApiProperty({ example: 'John Doe' })
+  @IsString()
+  name: string;
+
+  @ApiProperty({ enum: UserRole, example: UserRole.ANNOTATOR })
+  @IsEnum(UserRole)
+  role: UserRole;
+
+  @ApiProperty({ enum: UserStatus, example: UserStatus.ACTIVE, required: false })
+  @IsEnum(UserStatus)
+  @IsOptional()
+  status?: UserStatus;
+}
+
+export class UpdateUserDto {
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @ApiProperty({ required: false })
+  @IsEmail()
+  @IsOptional()
+  email?: string;
+
+  @ApiProperty({ enum: UserRole, required: false })
+  @IsEnum(UserRole)
+  @IsOptional()
+  role?: UserRole;
+
+  @ApiProperty({ enum: UserStatus, required: false })
+  @IsEnum(UserStatus)
+  @IsOptional()
+  status?: UserStatus;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MinLength(6)
+  @IsOptional()
+  password?: string;
+}

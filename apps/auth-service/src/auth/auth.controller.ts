@@ -1,5 +1,5 @@
-import { Controller, Post, Get, Patch, Body, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Post, Get, Patch, Delete, Body, Param, Query, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import {
@@ -10,6 +10,10 @@ import {
   ChangePasswordDto,
   AuthResponse,
   UserResponse,
+  CreateUserDto,
+  UpdateUserDto,
+  UserRole,
+  UserStatus,
 } from './dto/auth.dto';
 
 @ApiTags('auth')
@@ -126,6 +130,98 @@ export class AuthController {
         valid: true,
         user,
       },
+    };
+  }
+
+  /**
+   * User Management Endpoints
+   */
+
+  @Get('users')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List all users with optional filters' })
+  @ApiQuery({ name: 'role', enum: UserRole, required: false })
+  @ApiQuery({ name: 'status', enum: UserStatus, required: false })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiResponse({ status: 200, description: 'Users list retrieved' })
+  async listUsers(
+    @Query('role') role?: UserRole,
+    @Query('status') status?: UserStatus,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const result = await this.authService.listUsers({
+      role,
+      status,
+      search,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  @Get('users/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get user by ID' })
+  @ApiResponse({ status: 200, description: 'User retrieved' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getUser(@Param('id') id: string) {
+    const user = await this.authService.getUserById(id);
+    return {
+      success: true,
+      data: user,
+    };
+  }
+
+  @Post('users')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a new user (admin only)' })
+  @ApiResponse({ status: 201, description: 'User created successfully' })
+  @ApiResponse({ status: 409, description: 'User already exists' })
+  async createUser(@Body() dto: CreateUserDto) {
+    const user = await this.authService.createUser(dto);
+    return {
+      success: true,
+      data: user,
+      message: 'User created successfully',
+    };
+  }
+
+  @Patch('users/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update user details' })
+  @ApiResponse({ status: 200, description: 'User updated successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+    const user = await this.authService.updateUser(id, dto);
+    return {
+      success: true,
+      data: user,
+      message: 'User updated successfully',
+    };
+  }
+
+  @Delete('users/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete a user' })
+  @ApiResponse({ status: 200, description: 'User deleted successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async deleteUser(@Param('id') id: string) {
+    await this.authService.deleteUser(id);
+    return {
+      success: true,
+      message: 'User deleted successfully',
     };
   }
 }

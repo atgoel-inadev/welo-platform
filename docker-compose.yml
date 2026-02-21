@@ -189,8 +189,11 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: project-management
       KAFKA_GROUP_ID: project-management-group
+      MEDIA_FILES_PATH: /app/media
     ports:
       - "3004:3004"
+    volumes:
+      - ../welo-platform-ui/public/uploads:/app/media:ro
     depends_on:
       postgres:
         condition: service_healthy

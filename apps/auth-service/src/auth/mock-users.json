@@ -1,6 +1,6 @@
 [
   {
-    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "id": "650e8400-e29b-41d4-a716-446655440001",
     "email": "admin@welo.com",
     "password": "admin123",
     "name": "Admin User",
@@ -10,10 +10,10 @@
     "createdAt": "2026-01-01T00:00:00Z"
   },
   {
-    "id": "550e8400-e29b-41d4-a716-446655440002",
-    "email": "ops@welo.com",
-    "password": "ops123",
-    "name": "Operations Manager",
+    "id": "650e8400-e29b-41d4-a716-446655440002",
+    "email": "pm1@welo.com",
+    "password": "pm1234",
+    "name": "Alice PM",
     "role": "PROJECT_MANAGER",
     "permissions": [
       "project.create",
@@ -34,10 +34,10 @@
     "createdAt": "2026-01-01T00:00:00Z"
   },
   {
-    "id": "550e8400-e29b-41d4-a716-446655440003",
-    "email": "annotator@welo.com",
+    "id": "650e8400-e29b-41d4-a716-446655440003",
+    "email": "annotator1@welo.com",
     "password": "annotator123",
-    "name": "John Annotator",
+    "name": "Bob Annotator",
     "role": "ANNOTATOR",
     "permissions": [
       "task.read",
@@ -51,10 +51,27 @@
     "createdAt": "2026-01-01T00:00:00Z"
   },
   {
-    "id": "550e8400-e29b-41d4-a716-446655440004",
-    "email": "reviewer@welo.com",
+    "id": "650e8400-e29b-41d4-a716-446655440004",
+    "email": "annotator2@welo.com",
+    "password": "annotator123",
+    "name": "Carol Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440005",
+    "email": "reviewer1@welo.com",
     "password": "reviewer123",
-    "name": "Jane Reviewer",
+    "name": "David Reviewer",
     "role": "REVIEWER",
     "permissions": [
       "task.read",
@@ -68,16 +85,18 @@
     "createdAt": "2026-01-01T00:00:00Z"
   },
   {
-    "id": "550e8400-e29b-41d4-a716-446655440005",
-    "email": "customer@welo.com",
-    "password": "customer123",
-    "name": "Customer User",
-    "role": "CUSTOMER",
+    "id": "650e8400-e29b-41d4-a716-446655440006",
+    "email": "reviewer2@welo.com",
+    "password": "reviewer123",
+    "name": "Eve Reviewer",
+    "role": "REVIEWER",
     "permissions": [
-      "project.read",
-      "batch.read",
-      "report.read",
-      "export.download"
+      "task.read",
+      "annotation.read",
+      "annotation.review",
+      "annotation.approve",
+      "annotation.reject",
+      "quality.read"
     ],
     "status": "ACTIVE",
     "createdAt": "2026-01-01T00:00:00Z"

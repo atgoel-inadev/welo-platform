@@ -13,6 +13,8 @@ import {
   UserStatus,
   UpdateProfileDto,
   ChangePasswordDto,
+  CreateUserDto,
+  UpdateUserDto,
 } from './dto/auth.dto';
 
 interface User {
@@ -30,17 +32,38 @@ interface User {
 @Injectable()
 export class AuthService {
   private users: User[] = [];
-  private readonly usersFilePath = path.join(__dirname, 'mock-users.json');
+  private readonly usersFilePath: string;
 
   constructor(private readonly jwtService: JwtService) {
+    this.usersFilePath = this.resolveUsersFilePath();
     this.loadUsers();
+  }
+
+  private resolveUsersFilePath(): string {
+    // Try multiple paths to handle both dev (ts-node) and compiled (dist) environments
+    const candidates = [
+      path.join(__dirname, 'mock-users.json'),
+      path.join(process.cwd(), 'apps', 'auth-service', 'src', 'auth', 'mock-users.json'),
+      path.join(process.cwd(), 'dist', 'apps', 'auth-service', 'auth', 'mock-users.json'),
+    ];
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        console.log(`Found mock-users.json at: ${candidate}`);
+        return candidate;
+      }
+    }
+
+    // Default to source path and let loadUsers handle the error
+    console.warn('mock-users.json not found in any expected location, using default path');
+    return candidates[1];
   }
 
   private loadUsers() {
     try {
       const data = fs.readFileSync(this.usersFilePath, 'utf8');
       this.users = JSON.parse(data);
-      console.log(`Loaded ${this.users.length} mock users`);
+      console.log(`Loaded ${this.users.length} mock users from ${this.usersFilePath}`);
     } catch (error) {
       console.error('Error loading mock users:', error);
       this.users = [];
@@ -240,6 +263,127 @@ export class AuthService {
 
   async validateUser(userId: string): Promise<User | null> {
     return this.users.find((u) => u.id === userId) || null;
+  }
+
+  /**
+   * User Management Methods
+   */
+
+  async listUsers(params?: {
+    role?: UserRole;
+    status?: UserStatus;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: UserResponse[]; total: number; page: number; limit: number }> {
+    let filtered = [...this.users];
+
+    if (params?.role) {
+      filtered = filtered.filter((u) => u.role === params.role);
+    }
+
+    if (params?.status) {
+      filtered = filtered.filter((u) => u.status === params.status);
+    }
+
+    if (params?.search) {
+      const search = params.search.toLowerCase();
+      filtered = filtered.filter(
+        (u) =>
+          u.name.toLowerCase().includes(search) ||
+          u.email.toLowerCase().includes(search),
+      );
+    }
+
+    const page = params?.page || 1;
+    const limit = params?.limit || 50;
+    const total = filtered.length;
+    const start = (page - 1) * limit;
+    const paged = filtered.slice(start, start + limit);
+
+    return {
+      data: paged.map((u) => this.toUserResponse(u)),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  async getUserById(userId: string): Promise<UserResponse> {
+    const user = this.users.find((u) => u.id === userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return this.toUserResponse(user);
+  }
+
+  async createUser(dto: CreateUserDto): Promise<UserResponse> {
+    const existingUser = this.users.find((u) => u.email === dto.email);
+    if (existingUser) {
+      throw new ConflictException('User with this email already exists');
+    }
+
+    const newUser: User = {
+      id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+      email: dto.email,
+      password: dto.password,
+      name: dto.name,
+      role: dto.role,
+      permissions: this.getDefaultPermissions(dto.role),
+      status: dto.status || UserStatus.ACTIVE,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.users.push(newUser);
+    this.saveUsers();
+
+    return this.toUserResponse(newUser);
+  }
+
+  async updateUser(userId: string, dto: UpdateUserDto): Promise<UserResponse> {
+    const user = this.users.find((u) => u.id === userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (dto.email && dto.email !== user.email) {
+      const emailExists = this.users.find((u) => u.email === dto.email && u.id !== userId);
+      if (emailExists) {
+        throw new ConflictException('Email already in use');
+      }
+      user.email = dto.email;
+    }
+
+    if (dto.name) {
+      user.name = dto.name;
+    }
+
+    if (dto.role) {
+      user.role = dto.role;
+      user.permissions = this.getDefaultPermissions(dto.role);
+    }
+
+    if (dto.status) {
+      user.status = dto.status;
+    }
+
+    if (dto.password) {
+      user.password = dto.password;
+    }
+
+    this.saveUsers();
+
+    return this.toUserResponse(user);
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    const index = this.users.findIndex((u) => u.id === userId);
+    if (index === -1) {
+      throw new NotFoundException('User not found');
+    }
+
+    this.users.splice(index, 1);
+    this.saveUsers();
   }
 
   private getDefaultPermissions(role: UserRole): string[] {

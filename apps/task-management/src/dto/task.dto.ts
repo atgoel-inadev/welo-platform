@@ -108,3 +108,20 @@ export class TaskTransitionDto {
   event: string;
   payload?: any;
 }
+
+export class SaveAnnotationDto {
+  responses: Array<{
+    questionId: string;
+    response: any;
+    timeSpent?: number;
+    confidenceScore?: number;
+  }>;
+  extraWidgetData?: any;
+}
+
+export class SaveReviewDto {
+  decision: 'APPROVED' | 'REJECTED' | 'NEEDS_REVISION';
+  comments?: string;
+  qualityScore?: number;
+  extraWidgetData?: any;
+}

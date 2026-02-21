@@ -12,6 +12,8 @@ import {
   TaskFilterDto,
   BulkTaskActionDto,
   TaskTransitionDto,
+  SaveAnnotationDto,
+  SaveReviewDto,
 } from '../dto/task.dto';
 
 @ApiTags('tasks')
@@ -140,7 +142,6 @@ export class TaskController {
     @Param('id') id: string,
     @Query('userId') userId: string,
   ) {
-    // TODO: Get userId from JWT token instead of query param
     return this.taskService.getTaskRenderConfig(id, userId);
   }
 
@@ -154,9 +155,8 @@ export class TaskController {
   async saveAnnotation(
     @Param('id') id: string,
     @Query('userId') userId: string,
-    @Body() dto: any, // TODO: Import SaveAnnotationDto
+    @Body() dto: SaveAnnotationDto,
   ) {
-    // TODO: Get userId from JWT token
     return this.taskService.saveAnnotation(id, userId, dto);
   }
 
@@ -170,9 +170,8 @@ export class TaskController {
   async saveReview(
     @Param('id') id: string,
     @Query('userId') userId: string,
-    @Body() dto: any, // TODO: Import SaveReviewDto
+    @Body() dto: SaveReviewDto,
   ) {
-    // TODO: Get userId from JWT token
     return this.taskService.saveReview(id, userId, dto);
   }
 

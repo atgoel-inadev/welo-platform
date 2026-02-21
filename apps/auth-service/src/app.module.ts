@@ -23,6 +23,7 @@ import {
   Notification,
   Comment,
   Template,
+  ProjectTeamMember,
 } from '@app/common';
 
 @Module({
@@ -60,6 +61,7 @@ import {
           Notification,
           Comment,
           Template,
+          ProjectTeamMember,
         ],
         autoLoadEntities: true,
         synchronize: configService.get('NODE_ENV') === 'development',

@@ -5,12 +5,14 @@ import { BatchController } from './controllers/batch.controller';
 import { CustomerController } from './controllers/customer.controller';
 import { UIConfigurationController } from './controllers/ui-configuration.controller';
 import { HealthController } from './controllers/health.controller';
+import { MediaController } from './controllers/media.controller';
 import { ProjectService } from './services/project.service';
 import { WorkflowConfigService } from './services/workflow-config.service';
 import { AnnotationQuestionService } from './services/annotation-question.service';
 import { UIConfigurationService } from './services/ui-configuration.service';
 import { BatchService } from './services/batch.service';
 import { CustomerService } from './services/customer.service';
+import { ProjectTeamService } from './services/project-team.service';
 import { KafkaModule } from './kafka/kafka.module';
 import {
   Project,
@@ -32,6 +34,7 @@ import {
   Notification,
   Comment,
   Template,
+  ProjectTeamMember,
 } from '@app/common/entities';
 
 @Module({
@@ -63,6 +66,7 @@ import {
         Notification,
         Comment,
         Template,
+        ProjectTeamMember,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
@@ -77,10 +81,11 @@ import {
       ReviewApproval,
       AnnotationResponse,
       Batch,
+      ProjectTeamMember,
     ]),
     KafkaModule,
   ],
-  controllers: [ProjectController, BatchController, CustomerController, UIConfigurationController, HealthController],
-  providers: [ProjectService, WorkflowConfigService, AnnotationQuestionService, UIConfigurationService, BatchService, CustomerService],
+  controllers: [ProjectController, BatchController, CustomerController, UIConfigurationController, HealthController, MediaController],
+  providers: [ProjectService, WorkflowConfigService, AnnotationQuestionService, UIConfigurationService, BatchService, CustomerService, ProjectTeamService],
 })
 export class ProjectManagementModule {}

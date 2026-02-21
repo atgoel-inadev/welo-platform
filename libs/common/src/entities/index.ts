@@ -5,6 +5,7 @@ export * from './base.entity';
 export * from './customer.entity';
 export * from './user.entity';
 export * from './project.entity';
+export * from './project-team-member.entity';
 
 // Workflow Entities
 export * from './workflow.entity';

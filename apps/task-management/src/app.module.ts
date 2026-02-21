@@ -75,6 +75,7 @@ import {
       Assignment,
       Annotation,
       AnnotationResponse,
+      ReviewApproval,
       Project,
       Batch,
       Workflow,
