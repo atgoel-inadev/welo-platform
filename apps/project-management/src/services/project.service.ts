@@ -76,6 +76,9 @@ export class ProjectService {
   }
 
   async createProject(createDto: any) {
+    // Build workflow configuration with stage support
+    const workflowConfiguration = this.buildWorkflowConfiguration(createDto.workflow_config);
+
     const project = this.projectRepository.create({
       name: createDto.name,
       customerId: createDto.customerId,
@@ -91,17 +94,7 @@ export class ProjectService {
         workflowRules: createDto.workflowRules || {},
         uiConfiguration: createDto.uiConfiguration || {},
         annotationQuestions: [],
-        workflowConfiguration: {
-          annotatorsPerTask: 1,
-          reviewLevels: [],
-          approvalCriteria: {
-            requireAllAnnotatorConsensus: false,
-          },
-          assignmentRules: {
-            allowSelfAssignment: true,
-            preventDuplicateAssignments: true,
-          },
-        },
+        workflowConfiguration,
         supportedFileTypes: createDto.supportedFileTypes || [],
       },
     });
@@ -112,6 +105,50 @@ export class ProjectService {
       success: true,
       data: savedProject,
     };
+  }
+
+  /**
+   * Builds workflow configuration with extended stage support
+   * Maintains backward compatibility with review_levels structure
+   */
+  private buildWorkflowConfiguration(workflowConfig?: any) {
+    const defaultConfig = {
+      annotatorsPerTask: 1,
+      reviewLevels: [],
+      approvalCriteria: {
+        requireAllAnnotatorConsensus: false,
+      },
+      assignmentRules: {
+        allowSelfAssignment: true,
+        preventDuplicateAssignments: true,
+      },
+    };
+
+    if (!workflowConfig) {
+      return defaultConfig;
+    }
+
+    // Extended configuration with stages
+    const extendedConfig = {
+      ...defaultConfig,
+      
+      // Stage-based configuration (new)
+      stages: workflowConfig.stages || [],
+      
+      // Global settings
+      global_max_rework_before_reassignment: workflowConfig.global_max_rework_before_reassignment || 3,
+      enable_quality_gates: workflowConfig.enable_quality_gates || false,
+      minimum_quality_score: workflowConfig.minimum_quality_score || 70,
+
+      // Legacy support
+      annotatorsPerTask: workflowConfig.annotatorsPerTask || 
+                         workflowConfig.stages?.find(s => s.type === 'annotation')?.annotators_count || 1,
+      reviewLevels: workflowConfig.review_levels || workflowConfig.reviewLevels || [],
+      approvalCriteria: workflowConfig.approvalCriteria || workflowConfig.approval_criteria || defaultConfig.approvalCriteria,
+      assignmentRules: workflowConfig.assignmentRules || workflowConfig.assignment_rules || defaultConfig.assignmentRules,
+    };
+
+    return extendedConfig;
   }
 
   async updateProject(id: string, updateDto: any) {
@@ -133,6 +170,15 @@ export class ProjectService {
       project.configuration = {
         ...project.configuration,
         ...updateDto.configuration,
+      };
+    }
+
+    // Handle workflow_config update with stage support
+    if (updateDto.workflow_config) {
+      const updatedWorkflowConfig = this.buildWorkflowConfiguration(updateDto.workflow_config);
+      project.configuration = {
+        ...project.configuration,
+        workflowConfiguration: updatedWorkflowConfig,
       };
     }
 

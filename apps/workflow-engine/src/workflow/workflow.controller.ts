@@ -9,6 +9,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  Request,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { WorkflowService } from './workflow.service';
@@ -29,8 +30,9 @@ export class WorkflowController {
   @Post()
   @ApiOperation({ summary: 'Create a new workflow' })
   @ApiResponse({ status: 201, description: 'Workflow created successfully' })
-  async create(@Body() createDto: CreateWorkflowDto) {
-    const workflow = await this.workflowService.create(createDto);
+  async create(@Body() createDto: CreateWorkflowDto, @Request() req: any) {
+    const userId = req.user?.id || 'system';
+    const workflow = await this.workflowService.create(createDto, userId);
     return new ResponseDto(workflow);
   }
 

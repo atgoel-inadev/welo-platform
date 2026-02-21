@@ -1,13 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { TaskController } from './task/task.controller';
-import { TaskService } from './task/task.service';
-import { TaskRenderingService } from './services/task-rendering.service';
-import { StageAssignmentService } from './services/stage-assignment.service';
-import { BatchController } from './batch/batch.controller';
-import { HealthController } from './health/health.controller';
-import { KafkaModule } from './kafka/kafka.module';
 import {
   Workflow,
   WorkflowInstance,
@@ -15,21 +8,31 @@ import {
   Task,
   Batch,
   Project,
-  ProjectTeamMember,
   Customer,
   User,
   Assignment,
   Annotation,
+  AnnotationVersion,
   AnnotationResponse,
   QualityCheck,
+  QualityRule,
   ReviewApproval,
+  GoldTask,
   Queue,
   Export,
   AuditLog,
   Notification,
   Comment,
   Template,
+  ProjectTeamMember,
 } from '@app/common';
+import { KafkaModule } from './kafka/kafka.module';
+import { AnnotationModule } from './annotation/annotation.module';
+import { GoldTaskModule } from './gold-task/gold-task.module';
+import { QualityCheckModule } from './quality-check/quality-check.module';
+import { ReviewModule } from './review/review.module';
+import { StateManagementModule } from './state-management/state-management.module';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -42,7 +45,7 @@ import {
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
         host: configService.get('DATABASE_HOST', 'localhost'),
-        port: configService.get('DATABASE_PORT', 5432),
+        port: configService.get<number>('DATABASE_PORT', 5432),
         username: configService.get('DATABASE_USERNAME', 'postgres'),
         password: configService.get('DATABASE_PASSWORD', 'postgres'),
         database: configService.get('DATABASE_NAME', 'welo_platform'),
@@ -53,41 +56,36 @@ import {
           Task,
           Batch,
           Project,
-          ProjectTeamMember,
           Customer,
           User,
           Assignment,
           Annotation,
+          AnnotationVersion,
           AnnotationResponse,
           QualityCheck,
+          QualityRule,
           ReviewApproval,
+          GoldTask,
           Queue,
           Export,
           AuditLog,
           Notification,
           Comment,
           Template,
+          ProjectTeamMember,
         ],
         synchronize: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
       }),
       inject: [ConfigService],
     }),
-    TypeOrmModule.forFeature([
-      Task,
-      Assignment,
-      Annotation,
-      AnnotationResponse,
-      ReviewApproval,
-      Project,
-      Batch,
-      Workflow,
-      User,
-      Queue,
-    ]),
     KafkaModule,
+    AnnotationModule,
+    GoldTaskModule,
+    QualityCheckModule,
+    ReviewModule,
+    StateManagementModule,
   ],
-  controllers: [TaskController, BatchController, HealthController],
-  providers: [TaskService, TaskRenderingService, StageAssignmentService],
+  controllers: [HealthController],
 })
 export class AppModule {}

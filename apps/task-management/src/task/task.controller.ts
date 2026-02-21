@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { TaskService } from './task.service';
+import { StageAssignmentService } from '../services/stage-assignment.service';
 import {
   CreateTaskDto,
   CreateTaskBulkDto,
@@ -14,19 +15,33 @@ import {
   TaskTransitionDto,
   SaveAnnotationDto,
   SaveReviewDto,
+  TimeAnalyticsQueryDto,
+  AssignTaskToStageDto,
+  GetNextTaskForStageDto,
+  IncrementReworkDto,
 } from '../dto/task.dto';
 
 @ApiTags('tasks')
 @ApiBearerAuth()
 @Controller('tasks')
 export class TaskController {
-  constructor(private readonly taskService: TaskService) {}
+  constructor(
+    private readonly taskService: TaskService,
+    private readonly stageAssignmentService: StageAssignmentService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List tasks with filtering and pagination' })
   @ApiResponse({ status: 200, description: 'Tasks retrieved successfully' })
   async listTasks(@Query() filter: TaskFilterDto) {
     return this.taskService.listTasks(filter);
+  }
+
+  @Get('analytics/time')
+  @ApiOperation({ summary: 'Get time analytics for annotators and reviewers' })
+  @ApiResponse({ status: 200, description: 'Time analytics retrieved successfully' })
+  async getTimeAnalytics(@Query() query: TimeAnalyticsQueryDto) {
+    return this.taskService.getTimeAnalytics(query);
   }
 
   @Get(':id')
@@ -184,5 +199,79 @@ export class TaskController {
   @ApiResponse({ status: 404, description: 'Task not found' })
   async getAnnotationHistory(@Param('id') id: string) {
     return this.taskService.getAnnotationHistory(id);
+  }
+
+  // ========== Stage-Based Workflow Endpoints ==========
+
+  @Post(':taskId/assign-stage')
+  @ApiOperation({ 
+    summary: 'Assign task to user in specific workflow stage',
+    description: 'Enforces stage-specific user restrictions, rework limits, and capacity constraints'
+  })
+  @ApiResponse({ status: 201, description: 'Task assigned to stage successfully' })
+  @ApiResponse({ status: 404, description: 'Task or stage not found' })
+  @ApiResponse({ status: 400, description: 'User not authorized or limits exceeded' })
+  @ApiResponse({ status: 409, description: 'Task already assigned to user in this stage' })
+  async assignTaskToStage(
+    @Param('taskId') taskId: string,
+    @Body() dto: AssignTaskToStageDto,
+  ) {
+    return this.stageAssignmentService.assignTaskToStage(
+      taskId,
+      dto.userId,
+      dto.stageId,
+      dto.assignmentMethod as any,
+    );
+  }
+
+  @Get('next-for-stage')
+  @ApiOperation({
+    summary: 'Get next available task for user in specific stage',
+    description: 'Returns next task requiring assignment in specified stage with auto-assignment support'
+  })
+  @ApiResponse({ status: 200, description: 'Next task retrieved' })
+  @ApiResponse({ status: 404, description: 'Project or stage not found' })
+  async getNextTaskForStage(@Query() dto: GetNextTaskForStageDto) {
+    const task = await this.stageAssignmentService.getNextTaskForStage(
+      dto.userId,
+      dto.projectId,
+      dto.stageId,
+    );
+    
+    if (!task) {
+      return { message: 'No available tasks for this stage', task: null };
+    }
+    
+    return task;
+  }
+
+  @Post(':taskId/increment-rework')
+  @ApiOperation({
+    summary: 'Increment rework count for task in stage',
+    description: 'Tracks rework attempts when quality checks fail or changes are requested'
+  })
+  @ApiResponse({ status: 200, description: 'Rework count incremented' })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  async incrementReworkCount(
+    @Param('taskId') taskId: string,
+    @Body() dto: IncrementReworkDto,
+  ) {
+    await this.stageAssignmentService.incrementReworkCount(taskId, dto.stageId);
+    return { message: 'Rework count incremented successfully' };
+  }
+
+  @Get(':taskId/stage-quality-check/:stageId')
+  @ApiOperation({
+    summary: 'Check if task passes quality gate for stage',
+    description: 'Validates quality score against stage threshold'
+  })
+  @ApiResponse({ status: 200, description: 'Quality gate check completed' })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  async checkStageQualityGate(
+    @Param('taskId') taskId: string,
+    @Param('stageId') stageId: string,
+    @Query('qualityScore') qualityScore: number,
+  ) {
+    return this.stageAssignmentService.checkStageQualityGate(taskId, stageId, qualityScore);
   }
 }

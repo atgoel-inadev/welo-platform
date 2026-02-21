@@ -169,6 +169,41 @@ services:
     networks:
       - welo-network
 
+  # Annotation & Quality Assurance Service
+  annotation-qa-service:
+    build:
+      context: .
+      dockerfile: ./docker/annotation-qa-service/Dockerfile
+    container_name: welo-annotation-qa-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3005
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: welo_platform
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: annotation-qa-service
+      KAFKA_GROUP_ID: annotation-qa-service-group
+      WORKFLOW_ENGINE_URL: http://workflow-engine:3001/api/v1
+    ports:
+      - "3005:3005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      workflow-engine:
+        condition: service_started
+    networks:
+      - welo-network
+
   # Project Management Service
   project-management:
     build:

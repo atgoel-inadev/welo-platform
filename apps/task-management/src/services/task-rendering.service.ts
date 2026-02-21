@@ -162,6 +162,7 @@ export class TaskRenderingService {
       confidenceScore?: number;
     }>,
     extraWidgetData?: any,
+    timeSpent?: number,
   ): Promise<any> {
     const task = await this.taskRepository.findOne({ where: { id: taskId } });
 
@@ -218,6 +219,7 @@ export class TaskRenderingService {
         assignmentId: assignment.id,
         userId,
         annotationData: extraWidgetData || {},
+        timeSpent,
         version: 1,
       } as Partial<Annotation>);
     } else {
@@ -226,6 +228,10 @@ export class TaskRenderingService {
         ...extraWidgetData,
       };
       (annotation as any).version += 1;
+      // Accumulate time if re-submitting a draft
+      if (timeSpent) {
+        (annotation as any).timeSpent = ((annotation as any).timeSpent || 0) + timeSpent;
+      }
     }
 
     const savedAnnotation = await this.annotationRepository.save(annotation);
@@ -291,6 +297,7 @@ export class TaskRenderingService {
     comments?: string,
     qualityScore?: number,
     extraWidgetData?: any,
+    timeSpent?: number,
   ): Promise<any> {
     // ── Normalise decision to uppercase ──────────────────────────────────────
     const upperDecision = (decision || '').toUpperCase() as
@@ -367,11 +374,12 @@ export class TaskRenderingService {
           decision: upperDecision,
           comments,
           qualityScore,
+          timeSpent,
           reviewedAt: new Date().toISOString(),
           extraWidgetData,
         },
       },
-    };
+    } as typeof task.dataPayload;
 
     await this.taskRepository.save(task);
 

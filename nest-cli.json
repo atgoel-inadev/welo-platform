@@ -52,6 +52,15 @@
         "tsConfigPath": "apps/project-management/tsconfig.app.json"
       }
     },
+    "annotation-qa-service": {
+      "type": "application",
+      "root": "apps/annotation-qa-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/annotation-qa-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/annotation-qa-service/tsconfig.app.json"
+      }
+    },
     "common": {
       "type": "library",
       "root": "libs/common",

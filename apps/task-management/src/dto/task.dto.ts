@@ -117,6 +117,8 @@ export class SaveAnnotationDto {
     confidenceScore?: number;
   }>;
   extraWidgetData?: any;
+  /** Total elapsed seconds the annotator spent on this task */
+  timeSpent?: number;
 }
 
 export class SaveReviewDto {
@@ -124,4 +126,32 @@ export class SaveReviewDto {
   comments?: string;
   qualityScore?: number;
   extraWidgetData?: any;
+  /** Total elapsed seconds the reviewer spent on this task */
+  timeSpent?: number;
+}
+
+export class TimeAnalyticsQueryDto {
+  projectId?: string;
+  batchId?: string;
+  startDate?: string;
+  endDate?: string;
+  userId?: string;
+}
+
+// Stage-based workflow DTOs
+export class AssignTaskToStageDto {
+  userId: string;
+  stageId: string;
+  assignmentMethod?: 'MANUAL' | 'AUTOMATIC' | 'CLAIMED';
+}
+
+export class GetNextTaskForStageDto {
+  userId: string;
+  projectId: string;
+  stageId: string;
+}
+
+export class IncrementReworkDto {
+  stageId: string;
+  reason?: string;
 }

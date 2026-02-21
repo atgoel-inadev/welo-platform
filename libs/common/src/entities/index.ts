@@ -21,8 +21,11 @@ export * from './queue.entity';
 // Annotation Entities
 export * from './annotation.entity';
 export * from './annotation-response.entity';
+export * from './annotation-version.entity';
 export * from './quality-check.entity';
+export * from './quality-rule.entity';
 export * from './review-approval.entity';
+export * from './gold-task.entity';
 
 // Operational Entities
 export * from './export.entity';

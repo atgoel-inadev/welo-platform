@@ -659,6 +659,7 @@ export class TaskService {
       userId,
       dto.responses,
       dto.extraWidgetData,
+      dto.timeSpent,
     );
   }
 
@@ -674,6 +675,7 @@ export class TaskService {
       dto.comments,
       dto.qualityScore,
       dto.extraWidgetData,
+      dto.timeSpent,
     );
   }
 
@@ -683,5 +685,134 @@ export class TaskService {
    */
   async getAnnotationHistory(taskId: string): Promise<any> {
     return this.taskRenderingService.getTaskAnnotationHistory(taskId);
+  }
+
+  /**
+   * Get time analytics — aggregates annotation and review time by user/project/batch.
+   * Returns annotator metrics (timeSpent per userId) and reviewer metrics (timeSpent from
+   * task.dataPayload.context.lastReview) with optional filters.
+   */
+  async getTimeAnalytics(query: {
+    projectId?: string;
+    batchId?: string;
+    startDate?: string;
+    endDate?: string;
+    userId?: string;
+  }): Promise<any> {
+    // ── Build filter conditions ──────────────────────────────────────────────
+    const annotationWhere: any = {};
+    const taskWhere: any = {};
+
+    if (query.userId) {
+      annotationWhere.userId = query.userId;
+    }
+
+    // Fetch annotations with time data
+    const annotations = await this.annotationRepository.find({
+      where: annotationWhere,
+      select: ['id', 'taskId', 'userId', 'timeSpent', 'createdAt'],
+    });
+
+    // Fetch tasks for cross-referencing project/batch and estimated duration
+    const tasks = await this.taskRepository.find({
+      select: ['id', 'projectId', 'batchId', 'estimatedDuration', 'actualDuration', 'dataPayload', 'status', 'createdAt'],
+    });
+
+    const taskMap = new Map(tasks.map((t) => [t.id, t]));
+
+    // Filter annotations by project/batch/date
+    const filtered = annotations.filter((a) => {
+      const task = taskMap.get(a.taskId);
+      if (!task) return false;
+      if (query.projectId && task.projectId !== query.projectId) return false;
+      if (query.batchId && task.batchId !== query.batchId) return false;
+      if (query.startDate && new Date(a.createdAt) < new Date(query.startDate)) return false;
+      if (query.endDate && new Date(a.createdAt) > new Date(query.endDate)) return false;
+      return true;
+    });
+
+    // ── Annotator metrics ────────────────────────────────────────────────────
+    const annotatorMap = new Map<string, { totalTime: number; taskCount: number; tasks: string[] }>();
+    filtered.forEach((a) => {
+      if (!a.timeSpent) return;
+      const existing = annotatorMap.get(a.userId) || { totalTime: 0, taskCount: 0, tasks: [] };
+      existing.totalTime += a.timeSpent;
+      existing.taskCount += 1;
+      existing.tasks.push(a.taskId);
+      annotatorMap.set(a.userId, existing);
+    });
+
+    const annotatorMetrics = Array.from(annotatorMap.entries()).map(([userId, data]) => ({
+      userId,
+      totalTimeSeconds: data.totalTime,
+      taskCount: data.taskCount,
+      avgTimeSeconds: data.taskCount > 0 ? Math.round(data.totalTime / data.taskCount) : 0,
+    })).sort((a, b) => b.totalTimeSeconds - a.totalTimeSeconds);
+
+    // ── Reviewer metrics (from task.dataPayload.context.lastReview.timeSpent) ─
+    const reviewerMap = new Map<string, { totalTime: number; reviewCount: number }>();
+    const filteredTasks = tasks.filter((t) => {
+      if (query.projectId && t.projectId !== query.projectId) return false;
+      if (query.batchId && t.batchId !== query.batchId) return false;
+      if (query.startDate && new Date(t.createdAt) < new Date(query.startDate)) return false;
+      if (query.endDate && new Date(t.createdAt) > new Date(query.endDate)) return false;
+      return true;
+    });
+
+    filteredTasks.forEach((t) => {
+      const review = (t.dataPayload as any)?.context?.lastReview;
+      if (!review?.reviewerId || !review?.timeSpent) return;
+      if (query.userId && review.reviewerId !== query.userId) return;
+      const existing = reviewerMap.get(review.reviewerId) || { totalTime: 0, reviewCount: 0 };
+      existing.totalTime += review.timeSpent;
+      existing.reviewCount += 1;
+      reviewerMap.set(review.reviewerId, existing);
+    });
+
+    const reviewerMetrics = Array.from(reviewerMap.entries()).map(([userId, data]) => ({
+      userId,
+      totalTimeSeconds: data.totalTime,
+      reviewCount: data.reviewCount,
+      avgTimeSeconds: data.reviewCount > 0 ? Math.round(data.totalTime / data.reviewCount) : 0,
+    })).sort((a, b) => b.totalTimeSeconds - a.totalTimeSeconds);
+
+    // ── Task-level efficiency metrics ────────────────────────────────────────
+    const taskMetrics = filteredTasks
+      .filter((t) => t.actualDuration || t.estimatedDuration)
+      .map((t) => ({
+        taskId: t.id,
+        projectId: t.projectId,
+        batchId: t.batchId,
+        status: t.status,
+        estimatedDuration: t.estimatedDuration || 0,
+        actualDuration: t.actualDuration || 0,
+        efficiency: t.estimatedDuration && t.actualDuration
+          ? Math.round((t.estimatedDuration / t.actualDuration) * 100)
+          : null,
+      }))
+      .slice(0, 100); // cap at 100 for performance
+
+    // ── Summary ──────────────────────────────────────────────────────────────
+    const totalAnnotationTime = annotatorMetrics.reduce((s, a) => s + a.totalTimeSeconds, 0);
+    const totalReviewTime = reviewerMetrics.reduce((s, r) => s + r.totalTimeSeconds, 0);
+
+    return {
+      annotatorMetrics,
+      reviewerMetrics,
+      taskMetrics,
+      summary: {
+        totalAnnotationTimeSeconds: totalAnnotationTime,
+        totalReviewTimeSeconds: totalReviewTime,
+        avgAnnotationTimeSeconds: annotatorMetrics.length > 0
+          ? Math.round(totalAnnotationTime / annotatorMetrics.length)
+          : 0,
+        avgReviewTimeSeconds: reviewerMetrics.length > 0
+          ? Math.round(totalReviewTime / reviewerMetrics.length)
+          : 0,
+        totalAnnotators: annotatorMetrics.length,
+        totalReviewers: reviewerMetrics.length,
+        totalTasksAnalyzed: filteredTasks.length,
+      },
+    };
   }
 }

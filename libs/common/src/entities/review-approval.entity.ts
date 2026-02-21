@@ -63,6 +63,9 @@ export class ReviewApproval extends BaseEntity {
   @Column({ name: 'reviewed_at', type: 'timestamp', nullable: true })
   reviewedAt: Date;
 
+  @Column({ name: 'time_spent', type: 'int', nullable: true })
+  timeSpent: number;
+
   @Column({ name: 'requested_changes', type: 'jsonb', nullable: true })
   requestedChanges: Array<{
     field: string;
