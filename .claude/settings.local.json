@@ -4,7 +4,11 @@
       "Bash(npx tsc:*)",
       "Bash(npm run build:*)",
       "Bash(npx nx build:*)",
-      "Bash(npx nest build:*)"
+      "Bash(npx nest build:*)",
+      "Bash(xargs:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker exec:*)",
+      "Bash(grep:*)"
     ]
   }
 }

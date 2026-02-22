@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import {
   Task,
   Assignment,
@@ -46,9 +46,13 @@ export class TaskRenderingService {
       where: { id: task.projectId },
     });
 
-    // Determine the user's assignment (annotator = ASSIGNED, reviewer = any other stage)
+    // Determine the user's assignment (annotator = ASSIGNED/IN_PROGRESS, reviewer = other stages)
     const annotatorAssignment = await this.assignmentRepository.findOne({
-      where: { taskId, userId, status: AssignmentStatus.ASSIGNED },
+      where: { 
+        taskId, 
+        userId, 
+        status: In([AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS])
+      },
     });
 
     // Also look for any historical assignment (for draft-resume after page reload)
@@ -88,20 +92,28 @@ export class TaskRenderingService {
           order: { questionId: 'ASC' },
         });
 
-        previousAnnotations = annotations.map((a) => ({
-          id: a.id,
-          userId: a.userId,
-          isGold: false,
-          annotationData: a.annotationData,
-          responses: allResponses
-            .filter((r) => r.annotationId === a.id)
-            .map((r) => ({
-              questionId: r.questionId,
-              response: r.response,
-              timeSpent: r.timeSpent,
-            })),
-          createdAt: a.createdAt,
-        }));
+        previousAnnotations = annotations.map((a) => {
+          const annotationResponses = allResponses.filter((r) => r.annotationId === a.id);
+
+          // Build a dictionary keyed by questionId so the reviewer UI can do
+          // responses[questionId] directly (ReviewSplitScreen expects a Record, not an array).
+          const responsesMap: Record<string, any> = {};
+          for (const r of annotationResponses) {
+            responsesMap[r.questionId] = r.response;
+          }
+
+          return {
+            id: a.id,
+            userId: a.userId,
+            annotatorId: a.userId,
+            annotatorName: a.userId, // replaced with real name when user service is available
+            isGold: (a.annotationData as any)?.isGold === true,
+            annotationData: a.annotationData,
+            // responses as a plain object so ReviewSplitScreen can access responses[questionId]
+            responses: responsesMap,
+            createdAt: a.createdAt,
+          };
+        });
       }
     }
 
@@ -236,16 +248,52 @@ export class TaskRenderingService {
 
     const savedAnnotation = await this.annotationRepository.save(annotation);
 
+    // ── Fetch project to get question metadata ───────────────────────────────
+    const project = await this.projectRepository.findOne({
+      where: { id: task.projectId },
+    });
+    
+    const questionMap = new Map<string, { text: string; type: string }>();
+    
+    // Build question map from project config
+    if (project?.configuration?.annotationQuestions) {
+      for (const q of project.configuration.annotationQuestions) {
+        questionMap.set(q.id, { 
+          text: (q as any).text || (q as any).question || (q as any).label || 'Question', 
+          type: (q as any).type || (q as any).questionType || 'TEXT' 
+        });
+      }
+    }
+    
+    // Also check UI configuration widgets
+    if (project?.configuration?.uiConfiguration?.widgets) {
+      for (const w of project.configuration.uiConfiguration.widgets) {
+        if (!questionMap.has(w.id)) {
+          questionMap.set(w.id, { 
+            text: w.label || w.text || 'Question', 
+            type: w.type || 'TEXT' 
+          });
+        }
+      }
+    }
+
     // ── Upsert individual question responses ─────────────────────────────────
     for (const resp of responses) {
       let existing = await this.responseRepository.findOne({
         where: { taskId, annotationId: savedAnnotation.id, questionId: resp.questionId },
       });
+      
+      const questionMeta = questionMap.get(resp.questionId) || { 
+        text: 'Unknown Question', 
+        type: 'TEXT' 
+      };
 
       if (existing) {
         existing.response = resp.response;
         existing.timeSpent = resp.timeSpent ?? existing.timeSpent;
         (existing as any).confidenceScore = resp.confidenceScore;
+        existing.questionText = questionMeta.text;
+        existing.questionType = questionMeta.type;
         await this.responseRepository.save(existing);
       } else {
         const nr = this.responseRepository.create({
@@ -253,6 +301,8 @@ export class TaskRenderingService {
           annotationId: savedAnnotation.id,
           assignmentId: assignment.id,
           questionId: resp.questionId,
+          questionText: questionMeta.text,
+          questionType: questionMeta.type,
           response: resp.response,
           timeSpent: resp.timeSpent,
           confidenceScore: resp.confidenceScore,

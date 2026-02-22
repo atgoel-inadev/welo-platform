@@ -100,5 +100,301 @@
     ],
     "status": "ACTIVE",
     "createdAt": "2026-01-01T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440007",
+    "email": "pm2@welo.com",
+    "password": "pm1234",
+    "name": "Frank PM",
+    "role": "PROJECT_MANAGER",
+    "permissions": [
+      "project.create",
+      "project.read",
+      "project.update",
+      "project.delete",
+      "batch.create",
+      "batch.read",
+      "batch.update",
+      "workflow.create",
+      "workflow.read",
+      "workflow.update",
+      "task.read",
+      "task.assign",
+      "user.read"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440008",
+    "email": "annotator3@welo.com",
+    "password": "annotator123",
+    "name": "Grace Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440009",
+    "email": "annotator4@welo.com",
+    "password": "annotator123",
+    "name": "Henry Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440010",
+    "email": "annotator5@welo.com",
+    "password": "annotator123",
+    "name": "Iris Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440011",
+    "email": "annotator6@welo.com",
+    "password": "annotator123",
+    "name": "Jack Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440012",
+    "email": "annotator7@welo.com",
+    "password": "annotator123",
+    "name": "Karen Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440013",
+    "email": "annotator8@welo.com",
+    "password": "annotator123",
+    "name": "Liam Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440014",
+    "email": "annotator9@welo.com",
+    "password": "annotator123",
+    "name": "Maya Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440015",
+    "email": "annotator10@welo.com",
+    "password": "annotator123",
+    "name": "Noah Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440016",
+    "email": "annotator11@welo.com",
+    "password": "annotator123",
+    "name": "Olivia Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440017",
+    "email": "annotator12@welo.com",
+    "password": "annotator123",
+    "name": "Paul Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440018",
+    "email": "annotator13@welo.com",
+    "password": "annotator123",
+    "name": "Quinn Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440019",
+    "email": "annotator14@welo.com",
+    "password": "annotator123",
+    "name": "Rachel Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440020",
+    "email": "annotator15@welo.com",
+    "password": "annotator123",
+    "name": "Sam Annotator",
+    "role": "ANNOTATOR",
+    "permissions": [
+      "task.read",
+      "task.claim",
+      "task.submit",
+      "annotation.create",
+      "annotation.read",
+      "annotation.update"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440021",
+    "email": "reviewer3@welo.com",
+    "password": "reviewer123",
+    "name": "Tara Reviewer",
+    "role": "REVIEWER",
+    "permissions": [
+      "task.read",
+      "annotation.read",
+      "annotation.review",
+      "annotation.approve",
+      "annotation.reject",
+      "quality.read"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440022",
+    "email": "reviewer4@welo.com",
+    "password": "reviewer123",
+    "name": "Uma Reviewer",
+    "role": "REVIEWER",
+    "permissions": [
+      "task.read",
+      "annotation.read",
+      "annotation.review",
+      "annotation.approve",
+      "annotation.reject",
+      "quality.read"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "650e8400-e29b-41d4-a716-446655440023",
+    "email": "reviewer5@welo.com",
+    "password": "reviewer123",
+    "name": "Victor Reviewer",
+    "role": "REVIEWER",
+    "permissions": [
+      "task.read",
+      "annotation.read",
+      "annotation.review",
+      "annotation.approve",
+      "annotation.reject",
+      "quality.read"
+    ],
+    "status": "ACTIVE",
+    "createdAt": "2026-01-15T00:00:00Z"
   }
 ]

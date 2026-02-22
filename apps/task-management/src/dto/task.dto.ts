@@ -1,3 +1,6 @@
+import { IsOptional, IsString, IsNumber, IsIn, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
 export class CreateTaskDto {
   batchId: string;
   projectId: string;
@@ -70,15 +73,47 @@ export class GetNextTaskDto {
 }
 
 export class TaskFilterDto {
+  @IsOptional()
+  @IsString()
   batchId?: string;
+
+  @IsOptional()
+  @IsString()
   projectId?: string;
+
+  @IsOptional()
+  @IsString()
   status?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   priority?: number;
+
+  @IsOptional()
+  @IsString()
   assignedTo?: string;
+
+  @IsOptional()
+  @IsString()
   taskType?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   pageSize?: number;
+
+  @IsOptional()
+  @IsString()
   sortBy?: string;
+
+  @IsOptional()
+  @IsIn(['ASC', 'DESC'])
   sortOrder?: 'ASC' | 'DESC';
 }
 
@@ -110,23 +145,42 @@ export class TaskTransitionDto {
 }
 
 export class SaveAnnotationDto {
+  @IsArray()
   responses: Array<{
     questionId: string;
     response: any;
     timeSpent?: number;
     confidenceScore?: number;
   }>;
+  
+  @IsOptional()
   extraWidgetData?: any;
+  
   /** Total elapsed seconds the annotator spent on this task */
+  @IsOptional()
+  @IsNumber()
   timeSpent?: number;
 }
 
 export class SaveReviewDto {
+  @IsString()
+  @IsIn(['APPROVED', 'REJECTED', 'NEEDS_REVISION', 'approved', 'rejected', 'needs_revision'])
   decision: 'APPROVED' | 'REJECTED' | 'NEEDS_REVISION';
+  
+  @IsOptional()
+  @IsString()
   comments?: string;
+  
+  @IsOptional()
+  @IsNumber()
   qualityScore?: number;
+  
+  @IsOptional()
   extraWidgetData?: any;
+  
   /** Total elapsed seconds the reviewer spent on this task */
+  @IsOptional()
+  @IsNumber()
   timeSpent?: number;
 }
 

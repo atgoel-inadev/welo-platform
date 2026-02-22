@@ -161,23 +161,43 @@ export class TaskService {
     const pageSize = filter.pageSize || 50;
     const skip = (page - 1) * pageSize;
 
-    const where: FindOptionsWhere<Task> = {};
+    const queryBuilder = this.taskRepository.createQueryBuilder('task')
+      .leftJoinAndSelect('task.batch', 'batch')
+      .leftJoinAndSelect('task.project', 'project');
 
-    if (filter.batchId) where.batchId = filter.batchId;
-    if (filter.projectId) where.projectId = filter.projectId;
-    if (filter.status) where.status = TaskStatus[filter.status.toUpperCase()];
-    if (filter.priority) where.priority = filter.priority;
-    if (filter.taskType) where.taskType = TaskType[filter.taskType.toUpperCase()];
+    if (filter.batchId) {
+      queryBuilder.andWhere('task.batchId = :batchId', { batchId: filter.batchId });
+    }
+    if (filter.projectId) {
+      queryBuilder.andWhere('task.projectId = :projectId', { projectId: filter.projectId });
+    }
+    if (filter.status) {
+      queryBuilder.andWhere('task.status = :status', { status: TaskStatus[filter.status.toUpperCase()] });
+    }
+    if (filter.priority) {
+      queryBuilder.andWhere('task.priority = :priority', { priority: filter.priority });
+    }
+    if (filter.taskType) {
+      queryBuilder.andWhere('task.taskType = :taskType', { taskType: TaskType[filter.taskType.toUpperCase()] });
+    }
+    
+    // Handle assignedTo filter by joining with assignments
+    if (filter.assignedTo) {
+      queryBuilder
+        .leftJoin('task.assignments', 'assignment')
+        .andWhere('assignment.userId = :userId', { userId: filter.assignedTo })
+        .andWhere('assignment.status IN (:...statuses)', { 
+          statuses: [AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS] 
+        });
+    }
 
-    const [tasks, total] = await this.taskRepository.findAndCount({
-      where,
-      relations: ['batch', 'project'],
-      skip,
-      take: pageSize,
-      order: {
-        [filter.sortBy || 'createdAt']: filter.sortOrder || 'DESC',
-      },
-    });
+    const sortBy = filter.sortBy || 'createdAt';
+    const sortOrder = filter.sortOrder || 'DESC';
+    queryBuilder.orderBy(`task.${sortBy}`, sortOrder === 'ASC' ? 'ASC' : 'DESC');
+
+    queryBuilder.skip(skip).take(pageSize);
+
+    const [tasks, total] = await queryBuilder.getManyAndCount();
 
     return {
       tasks,

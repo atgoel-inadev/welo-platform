@@ -26,7 +26,7 @@ import {
  * Follows REST best practices and clean architecture
  */
 @ApiTags('ui-configurations')
-@Controller('api/v1/projects')
+@Controller('projects')
 // @ApiBearerAuth()
 // @UseGuards(JwtAuthGuard) // Uncomment when auth is implemented
 export class UIConfigurationController {
