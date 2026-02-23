@@ -226,11 +226,12 @@ services:
       KAFKA_CLIENT_ID: project-management
       KAFKA_GROUP_ID: project-management-group
       MEDIA_FILES_PATH: /app/media
+      ENABLE_DIRECTORY_SCAN: "true"  # Enable directory scan mode for demo
       PLUGIN_SECRETS_KEY: 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
     ports:
       - "3004:3004"
     volumes:
-      - ../welo-platform-ui/public/uploads:/app/media:ro
+      - ../welo-platform-ui/public/uploads:/app/media  # Read-write for directory scan mode
     depends_on:
       postgres:
         condition: service_healthy

@@ -5,6 +5,7 @@ import {
   UpdateBatchDto,
   AllocateFilesDto,
   AllocateFolderDto,
+  ScanDirectoryDto,
   AssignTaskDto,
   PullNextTaskDto,
 } from '../dto/batch.dto';
@@ -49,6 +50,18 @@ export class BatchController {
   @Post(':id/allocate-folder')
   async allocateFolder(@Param('id') id: string, @Body() dto: AllocateFolderDto) {
     return this.batchService.allocateFolder(id, dto);
+  }
+
+  /**
+   * Scan directory and create tasks for all files found (DEMO MODE)
+   * POST /api/v1/batches/:id/scan-directory
+   * 
+   * Scans /media/{projectId}/{batchName}/ by default
+   * Creates tasks for all files found in the directory
+   */
+  @Post(':id/scan-directory')
+  async scanDirectory(@Param('id') id: string, @Body() dto: ScanDirectoryDto) {
+    return this.batchService.scanDirectoryAndCreateTasks(id, dto);
   }
 
   @Get(':id/statistics')

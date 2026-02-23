@@ -4,7 +4,9 @@ import { Repository, In } from 'typeorm';
 import { Batch, Task, Project, Assignment, User, Workflow } from '@app/common/entities';
 import { BatchStatus, TaskStatus, TaskType, AssignmentStatus, AssignmentMethod, WorkflowStage, UserStatus, WorkflowStatus } from '@app/common/enums';
 import { KafkaService } from '../kafka/kafka.service';
-import { CreateBatchDto, UpdateBatchDto, AllocateFilesDto, AllocateFolderDto, AssignTaskDto, PullNextTaskDto } from '../dto/batch.dto';
+import { CreateBatchDto, UpdateBatchDto, AllocateFilesDto, AllocateFolderDto, ScanDirectoryDto, AssignTaskDto, PullNextTaskDto } from '../dto/batch.dto';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class BatchService {
@@ -184,6 +186,222 @@ export class BatchService {
     // This would require file system access or cloud storage integration
     // For now, this is a placeholder that would be implemented based on storage backend
     throw new BadRequestException('Folder allocation requires storage backend integration');
+  }
+
+  /**
+   * TACTICAL DEMO MODE: Scan directory and create tasks for files
+   * Scans /media/{projectId}/{batchName}/ and creates tasks
+   */
+  async scanDirectoryAndCreateTasks(batchId: string, dto: ScanDirectoryDto): Promise<{
+    tasks: Task[];
+    scannedFiles: number;
+    createdTasks: number;
+    errors: string[];
+  }> {
+    // Check if directory scan is enabled
+    const directoryScanEnabled = process.env.ENABLE_DIRECTORY_SCAN === 'true';
+    if (!directoryScanEnabled) {
+      throw new BadRequestException(
+        'Directory scan mode is disabled. Set ENABLE_DIRECTORY_SCAN=true to enable.'
+      );
+    }
+
+    const batch = await this.batchRepository.findOne({
+      where: { id: batchId },
+      relations: ['project'],
+    });
+
+    if (!batch) {
+      throw new NotFoundException(`Batch with ID ${batchId} not found`);
+    }
+
+    const project = batch.project;
+    const mediaBasePath = process.env.MEDIA_FILES_PATH || '/app/media';
+    
+    // Determine directory path
+    let scanPath: string;
+    if (dto.directoryPath) {
+      // Custom path provided
+      scanPath = path.join(mediaBasePath, dto.directoryPath);
+    } else {
+      // Default: /media/{projectId}/{batchName}
+      const sanitizedBatchName = batch.name.replace(/[^a-zA-Z0-9-_]/g, '_');
+      scanPath = path.join(mediaBasePath, project.id, sanitizedBatchName);
+    }
+
+    this.logger.log(`Scanning directory: ${scanPath}`);
+
+    // Check if directory exists
+    if (!fs.existsSync(scanPath)) {
+      throw new NotFoundException(
+        `Directory not found: ${scanPath}. Please create the directory and place files there.`
+      );
+    }
+
+    // Read files from directory
+    const files = fs.readdirSync(scanPath);
+    const errors: string[] = [];
+    const tasks: Task[] = [];
+
+    // Filter files based on pattern
+    let filteredFiles = files.filter(file => {
+      const fullPath = path.join(scanPath, file);
+      const stat = fs.statSync(fullPath);
+      return stat.isFile();
+    });
+
+    if (dto.filePattern) {
+      const pattern = new RegExp(dto.filePattern.replace('*', '.*'));
+      filteredFiles = filteredFiles.filter(file => pattern.test(file));
+    }
+
+    this.logger.log(`Found ${filteredFiles.length} files to process`);
+
+    // Get workflow for the project
+    const workflow = await this.getProjectWorkflow(project.id);
+
+    // Create tasks for each file
+    for (const fileName of filteredFiles) {
+      try {
+        const filePath = path.join(scanPath, fileName);
+        const stats = fs.statSync(filePath);
+        const fileExt = path.extname(fileName).toLowerCase();
+        
+        // Detect file type
+        const fileType = this.detectFileType(fileExt);
+        
+        // Construct file URL for media endpoint
+        const relativePath = dto.directoryPath 
+          ? `${dto.directoryPath}/${fileName}`
+          : `${project.id}/${batch.name.replace(/[^a-zA-Z0-9-_]/g, '_')}/${fileName}`;
+        
+        const fileUrl = `http://localhost:3004/api/v1/media/${relativePath}`;
+
+        const task = this.taskRepository.create({
+          batchId: batch.id,
+          projectId: project.id,
+          workflowId: workflow.id,
+          externalId: `${batch.name}_${fileName}`,
+          taskType: dto.taskType ? TaskType[dto.taskType.toUpperCase()] : TaskType.ANNOTATION,
+          status: TaskStatus.QUEUED,
+          priority: batch.priority,
+          dueDate: batch.dueDate,
+          fileType: fileType,
+          fileUrl: fileUrl,
+          fileMetadata: {
+            fileName: fileName,
+            fileSize: stats.size,
+            mimeType: this.getMimeType(fileExt),
+          },
+          dataPayload: {
+            sourceData: { fileName, filePath: relativePath },
+            references: [],
+            context: { 
+              scanMode: 'directory', 
+              batchId: batch.id,
+              scannedFrom: scanPath,
+              scannedAt: new Date().toISOString(),
+            },
+          },
+          machineState: {
+            value: 'queued',
+            context: {},
+            done: false,
+            changed: false,
+          },
+          totalAssignmentsRequired: project.configuration?.workflowConfiguration?.annotatorsPerTask || 1,
+          completedAssignments: 0,
+          maxReviewLevel: project.configuration?.workflowConfiguration?.reviewLevels?.length || 0,
+          currentReviewLevel: 0,
+        });
+
+        tasks.push(task);
+      } catch (error) {
+        this.logger.error(`Failed to process file ${fileName}:`, error);
+        errors.push(`${fileName}: ${error.message}`);
+      }
+    }
+
+    // Save all tasks
+    const savedTasks = await this.taskRepository.save(tasks);
+
+    // Update batch task count
+    batch.totalTasks += savedTasks.length;
+    await this.batchRepository.save(batch);
+
+    // Publish Kafka events
+    for (const task of savedTasks) {
+      await this.kafkaService.publishTaskEvent('created', task);
+    }
+
+    this.logger.log(
+      `Created ${savedTasks.length} tasks from ${filteredFiles.length} files in batch ${batchId}`
+    );
+
+    // Auto-assign if requested
+    if (dto.autoAssign) {
+      const assignmentMethod = dto.assignmentMethod || 'AUTO_ROUND_ROBIN';
+      await this.autoAssignTasks(savedTasks, assignmentMethod);
+    }
+
+    return {
+      tasks: savedTasks,
+      scannedFiles: filteredFiles.length,
+      createdTasks: savedTasks.length,
+      errors,
+    };
+  }
+
+  /**
+   * Detect file type from extension
+   */
+  private detectFileType(ext: string): string {
+    const typeMap: Record<string, string> = {
+      '.jpg': 'IMAGE',
+      '.jpeg': 'IMAGE',
+      '.png': 'IMAGE',
+      '.gif': 'IMAGE',
+      '.webp': 'IMAGE',
+      '.svg': 'IMAGE',
+      '.mp4': 'VIDEO',
+      '.webm': 'VIDEO',
+      '.avi': 'VIDEO',
+      '.mov': 'VIDEO',
+      '.mp3': 'AUDIO',
+      '.wav': 'AUDIO',
+      '.ogg': 'AUDIO',
+      '.pdf': 'PDF',
+      '.txt': 'TEXT',
+      '.csv': 'CSV',
+      '.json': 'JSON',
+    };
+    return typeMap[ext] || 'TEXT';
+  }
+
+  /**
+   * Get MIME type from extension
+   */
+  private getMimeType(ext: string): string {
+    const mimeTypes: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.avi': 'video/x-msvideo',
+      '.mov': 'video/quicktime',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.ogg': 'audio/ogg',
+      '.pdf': 'application/pdf',
+      '.txt': 'text/plain',
+      '.csv': 'text/csv',
+      '.json': 'application/json',
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
   }
 
   async getUnassignedTasksForBatch(batchId: string): Promise<Task[]> {

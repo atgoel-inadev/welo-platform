@@ -104,6 +104,27 @@ This monorepo uses:
 | Auth Service | 3002 | Authentication & authorization |
 | Task Management | 3003 | Task, batch, queue operations |
 
+## Development Workflow
+
+**NEW:** Contract-first, backend-first development practices to reduce iteration cycles and improve code quality.
+
+### Quick Start
+1. 📖 **Read:** [WORKFLOW_CHEAT_SHEET.md](WORKFLOW_CHEAT_SHEET.md) - Quick reference for daily development
+2. 📋 **Plan:** Copy [docs/FEATURE_PLAN_TEMPLATE.md](docs/FEATURE_PLAN_TEMPLATE.md) before starting features
+3. 🧪 **Test:** Use [scripts/test-batch-task-apis.ps1](scripts/test-batch-task-apis.ps1) as testing template
+4. 📚 **Learn:** [DEVELOPMENT_WORKFLOW.md](DEVELOPMENT_WORKFLOW.md) - Comprehensive guide with examples
+
+### Key Principles
+- ✅ Define API contracts **before** coding
+- ✅ Test backend with curl/PowerShell **before** frontend integration
+- ✅ Use feature planning template for every feature
+- ✅ Build only the service you changed
+- ✅ One rebuild instead of six
+
+**Time Savings:** 33-50% per feature (2 hours vs 3+ hours)
+
+See [WORKFLOW_DOCUMENTATION_SUMMARY.md](WORKFLOW_DOCUMENTATION_SUMMARY.md) for complete overview.
+
 ## Documentation
 
 API documentation available at:

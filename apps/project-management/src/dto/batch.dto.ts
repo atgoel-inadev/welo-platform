@@ -51,6 +51,14 @@ export class AllocateFolderDto {
   autoAssign?: boolean;
 }
 
+export class ScanDirectoryDto {
+  directoryPath?: string; // Optional: defaults to /media/{projectId}/{batchName}
+  filePattern?: string; // e.g., "*.jpg", "*.mp4" - defaults to all files
+  taskType?: string;
+  autoAssign?: boolean;
+  assignmentMethod?: 'MANUAL' | 'AUTO_ROUND_ROBIN' | 'AUTO_SKILL_BASED' | 'AUTO_WORKLOAD_BASED';
+}
+
 export class AssignTaskDto {
   taskId: string;
   userId?: string; // Optional: if not provided, uses auto-assignment
