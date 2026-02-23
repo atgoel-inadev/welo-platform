@@ -163,7 +163,8 @@ export class TaskService {
 
     const queryBuilder = this.taskRepository.createQueryBuilder('task')
       .leftJoinAndSelect('task.batch', 'batch')
-      .leftJoinAndSelect('task.project', 'project');
+      .leftJoinAndSelect('task.project', 'project')
+      .leftJoinAndSelect('task.assignments', 'assignment');
 
     if (filter.batchId) {
       queryBuilder.andWhere('task.batchId = :batchId', { batchId: filter.batchId });
@@ -181,10 +182,9 @@ export class TaskService {
       queryBuilder.andWhere('task.taskType = :taskType', { taskType: TaskType[filter.taskType.toUpperCase()] });
     }
     
-    // Handle assignedTo filter by joining with assignments
+    // Handle assignedTo filter
     if (filter.assignedTo) {
       queryBuilder
-        .leftJoin('task.assignments', 'assignment')
         .andWhere('assignment.userId = :userId', { userId: filter.assignedTo })
         .andWhere('assignment.status IN (:...statuses)', { 
           statuses: [AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS] 
@@ -197,7 +197,22 @@ export class TaskService {
 
     queryBuilder.skip(skip).take(pageSize);
 
-    const [tasks, total] = await queryBuilder.getManyAndCount();
+    const [rawTasks, total] = await queryBuilder.getManyAndCount();
+
+    // Transform tasks to add computed fields for frontend
+    const tasks = rawTasks.map(task => {
+      // Find the active assignment (ASSIGNED or IN_PROGRESS)
+      const activeAssignment = task.assignments?.find(
+        a => a.status === AssignmentStatus.ASSIGNED || a.status === AssignmentStatus.IN_PROGRESS
+      );
+
+      return {
+        ...task,
+        assignedTo: activeAssignment?.userId || null,
+        workflowStage: activeAssignment?.workflowStage || null,
+        fileName: task.fileMetadata?.fileName || task.externalId || 'Unknown',
+      };
+    });
 
     return {
       tasks,
@@ -244,6 +259,15 @@ export class TaskService {
   }
 
   async assignTask(dto: AssignTaskDto): Promise<Assignment> {
+    this.logger.log(`Assigning task ${dto.taskId} to user ${dto.userId}`);
+    
+    if (!dto.taskId) {
+      throw new BadRequestException('taskId is required');
+    }
+    if (!dto.userId) {
+      throw new BadRequestException('userId is required');
+    }
+
     const task = await this.getTask(dto.taskId);
 
     // Check if already assigned to this user
@@ -264,28 +288,49 @@ export class TaskService {
       where: { taskId: dto.taskId },
     });
 
-    // Create assignment
+    // Create assignment with explicit taskId
     const assignment = this.assignmentRepository.create({
       taskId: dto.taskId,
       userId: dto.userId,
-      workflowStage: dto.workflowStage ? WorkflowStage[dto.workflowStage] : WorkflowStage.ANNOTATION,
+      workflowStage: dto.workflowStage ? WorkflowStage[dto.workflowStage.toUpperCase()] : WorkflowStage.ANNOTATION,
       status: AssignmentStatus.ASSIGNED,
       assignedAt: new Date(),
       expiresAt: new Date(Date.now() + (dto.expiresIn || 28800) * 1000), // Default 8 hours
-      assignmentMethod: dto.assignmentMethod ? AssignmentMethod[dto.assignmentMethod] : AssignmentMethod.MANUAL,
+      assignmentMethod: dto.assignmentMethod ? AssignmentMethod[dto.assignmentMethod.toUpperCase()] : AssignmentMethod.MANUAL,
       assignmentOrder: assignmentCount + 1,
       isPrimary: assignmentCount === 0,
       requiresConsensus: task.requiresConsensus,
       consensusGroupId: task.id,
     });
 
-    const savedAssignment = await this.assignmentRepository.save(assignment);
+    this.logger.log(`Creating assignment: taskId=${assignment.taskId}, userId=${assignment.userId}`);
+    
+    // Use insert instead of save to avoid cascading updates
+    const insertResult = await this.assignmentRepository
+      .createQueryBuilder()
+      .insert()
+      .values(assignment)
+      .execute();
+    
+    // Fetch the saved assignment with all fields
+    const savedAssignment = await this.assignmentRepository.findOne({
+      where: { id: insertResult.identifiers[0].id },
+    });
+    
+    if (!savedAssignment) {
+      throw new Error('Failed to create assignment');
+    }
 
-    // Update task status and assignment
-    task.status = TaskStatus.ASSIGNED;
-    task.assignmentId = savedAssignment.id;
-    task.assignedAt = new Date();
-    await this.taskRepository.save(task);
+    // Update task status and assignment - fetch task without relations to avoid cascading updates
+    const taskToUpdate = await this.taskRepository.findOne({ where: { id: dto.taskId } });
+    if (!taskToUpdate) {
+      throw new NotFoundException(`Task ${dto.taskId} not found`);
+    }
+    
+    taskToUpdate.status = TaskStatus.ASSIGNED;
+    taskToUpdate.assignmentId = savedAssignment.id;
+    taskToUpdate.assignedAt = new Date();
+    await this.taskRepository.save(taskToUpdate);
 
     // Publish Kafka events
     await this.kafkaService.publishTaskEvent('assigned', task);
@@ -834,5 +879,115 @@ export class TaskService {
         totalTasksAnalyzed: filteredTasks.length,
       },
     };
+  }
+
+  /**
+   * Reassign a task to a different user (PM action).
+   * Marks any active assignment as RELEASED and creates a fresh assignment
+   * for the new user, then resets the task status to ASSIGNED.
+   */
+  async reassignTask(
+    taskId: string,
+    newUserId: string,
+    reason?: string,
+    workflowStage?: string,
+  ): Promise<{ task: Task; assignment: Assignment }> {
+    const task = await this.getTask(taskId);
+
+    const newUser = await this.userRepository.findOne({ where: { id: newUserId } });
+    if (!newUser) {
+      throw new NotFoundException(`User ${newUserId} not found`);
+    }
+
+    // Release all active assignments
+    const activeAssignments = await this.assignmentRepository.find({
+      where: {
+        taskId,
+        status: In([AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS]),
+      },
+    });
+
+    for (const a of activeAssignments) {
+      a.status = AssignmentStatus.REASSIGNED;
+      await this.assignmentRepository.save(a);
+    }
+
+    // Determine stage: preserve current stage if not specified
+    const stage = workflowStage
+      ? WorkflowStage[workflowStage.toUpperCase() as keyof typeof WorkflowStage]
+      : WorkflowStage.ANNOTATION;
+
+    const assignment = this.assignmentRepository.create({
+      taskId,
+      userId: newUserId,
+      workflowStage: stage,
+      status: AssignmentStatus.ASSIGNED,
+      assignedAt: new Date(),
+      expiresAt: new Date(Date.now() + 28800 * 1000),
+      assignmentMethod: AssignmentMethod.MANUAL,
+      assignmentOrder: activeAssignments.length + 1,
+      isPrimary: true,
+    });
+
+    const savedAssignment = await this.assignmentRepository.save(assignment);
+
+    task.status = TaskStatus.ASSIGNED;
+    task.assignmentId = savedAssignment.id;
+    task.assignedAt = new Date();
+    await this.taskRepository.save(task);
+
+    try {
+      await this.kafkaService.publishTaskEvent('assigned', task);
+      await this.kafkaService.publishNotification({
+        userId: newUserId,
+        type: 'TASK_ASSIGNED',
+        title: 'Task Reassigned to You',
+        message: `Task ${task.externalId} has been reassigned to you${reason ? ': ' + reason : ''}`,
+        metadata: { taskId: task.id, batchId: task.batchId, projectId: task.projectId },
+      });
+    } catch (kafkaErr) {
+      this.logger.warn(`Kafka publish failed during reassign of task ${taskId}: ${kafkaErr.message}`);
+    }
+
+    this.logger.log(`Task ${taskId} reassigned to user ${newUserId}`);
+    return { task, assignment: savedAssignment };
+  }
+
+  async unassignTask(taskId: string): Promise<Task> {
+    const task = await this.taskRepository.findOne({
+      where: { id: taskId },
+      relations: ['assignments'],
+    });
+
+    if (!task) {
+      throw new NotFoundException(`Task with ID ${taskId} not found`);
+    }
+
+    // Find ALL active assignments (ASSIGNED or IN_PROGRESS)
+    const activeAssignments = task.assignments.filter(
+      a => a.status === AssignmentStatus.ASSIGNED || a.status === AssignmentStatus.IN_PROGRESS
+    );
+
+    if (activeAssignments.length === 0) {
+      this.logger.warn(`No active assignments found for task ${taskId}`);
+      return task;
+    }
+
+    // Mark ALL active assignments as REASSIGNED
+    for (const assignment of activeAssignments) {
+      assignment.status = AssignmentStatus.REASSIGNED;
+      await this.assignmentRepository.save(assignment);
+      this.logger.log(`Released assignment ${assignment.id} for task ${taskId}`);
+    }
+
+    // Update task status back to QUEUED
+    task.status = TaskStatus.QUEUED;
+    task.assignmentId = null;
+    task.assignedAt = null;
+    
+    const updatedTask = await this.taskRepository.save(task);
+    
+    this.logger.log(`Task ${taskId} unassigned successfully, released ${activeAssignments.length} assignments`);
+    return updatedTask;
   }
 }

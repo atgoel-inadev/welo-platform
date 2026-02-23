@@ -26,6 +26,36 @@ export class BatchService {
     private kafkaService: KafkaService,
   ) {}
 
+  /**
+   * List all batches, optionally filtered by projectId
+   */
+  async listBatches(projectId?: string): Promise<Batch[]> {
+    if (projectId) {
+      return this.batchRepository.find({
+        where: { projectId },
+        order: { createdAt: 'DESC' },
+      });
+    }
+    return this.batchRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Get a single batch by ID
+   */
+  async getBatch(batchId: string): Promise<Batch> {
+    const batch = await this.batchRepository.findOne({
+      where: { id: batchId },
+    });
+
+    if (!batch) {
+      throw new NotFoundException(`Batch with ID ${batchId} not found`);
+    }
+
+    return batch;
+  }
+
   async createBatch(dto: CreateBatchDto): Promise<Batch> {
     const project = await this.projectRepository.findOne({
       where: { id: dto.projectId },

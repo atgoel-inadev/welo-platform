@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { TaskService } from './task.service';
 import { StageAssignmentService } from '../services/stage-assignment.service';
 import { PluginRunnerService, PluginExecutePayload } from '../services/plugin-runner.service';
+import { CommentService, AddCommentDto, ResolveCommentDto } from '../services/comment.service';
 import {
   CreateTaskDto,
   CreateTaskBulkDto,
@@ -30,6 +31,7 @@ export class TaskController {
     private readonly taskService: TaskService,
     private readonly stageAssignmentService: StageAssignmentService,
     private readonly pluginRunnerService: PluginRunnerService,
+    private readonly commentService: CommentService,
   ) {}
 
   @Get()
@@ -292,5 +294,74 @@ export class TaskController {
   ) {
     const { projectId, ...payload } = dto;
     return this.pluginRunnerService.execute(taskId, projectId, payload);
+  }
+
+  // ─── Task Reassignment (PM) ───────────────────────────────────────────────
+
+  @Post(':id/reassign')
+  @ApiOperation({
+    summary: 'Reassign task to a different user (PM action)',
+    description: 'Releases current assignment and creates a new one for the specified user',
+  })
+  @ApiResponse({ status: 200, description: 'Task reassigned successfully' })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  async reassignTask(
+    @Param('id') taskId: string,
+    @Body() dto: { newUserId: string; reason?: string; workflowStage?: string },
+  ) {
+    return this.taskService.reassignTask(taskId, dto.newUserId, dto.reason, dto.workflowStage);
+  }
+
+  @Post(':id/unassign')
+  @ApiOperation({
+    summary: 'Unassign task from current user (PM action)',
+    description: 'Releases current assignment and returns task to QUEUED status',
+  })
+  @ApiResponse({ status: 200, description: 'Task unassigned successfully' })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  async unassignTask(@Param('id') taskId: string) {
+    return this.taskService.unassignTask(taskId);
+  }
+
+  // ─── Task Comments (PM) ───────────────────────────────────────────────────
+
+  @Get(':id/comments')
+  @ApiOperation({ summary: 'List all comments on a task' })
+  @ApiResponse({ status: 200, description: 'Comments retrieved successfully' })
+  async getTaskComments(@Param('id') taskId: string) {
+    return this.commentService.getTaskComments(taskId);
+  }
+
+  @Post(':id/comments')
+  @ApiOperation({ summary: 'Add a comment to a task (PM or any user)' })
+  @ApiResponse({ status: 201, description: 'Comment added successfully' })
+  async addTaskComment(
+    @Param('id') taskId: string,
+    @Body() dto: AddCommentDto,
+  ) {
+    return this.commentService.addTaskComment(taskId, dto);
+  }
+
+  @Patch(':id/comments/:commentId/resolve')
+  @ApiOperation({ summary: 'Mark a task comment as resolved' })
+  @ApiResponse({ status: 200, description: 'Comment resolved successfully' })
+  async resolveComment(
+    @Param('id') _taskId: string,
+    @Param('commentId') commentId: string,
+    @Body() dto: ResolveCommentDto,
+  ) {
+    return this.commentService.resolveComment(commentId, dto);
+  }
+
+  @Delete(':id/comments/:commentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a task comment (author only)' })
+  @ApiResponse({ status: 204, description: 'Comment deleted' })
+  async deleteComment(
+    @Param('id') _taskId: string,
+    @Param('commentId') commentId: string,
+    @Query('userId') userId: string,
+  ) {
+    await this.commentService.deleteComment(commentId, userId);
   }
 }
