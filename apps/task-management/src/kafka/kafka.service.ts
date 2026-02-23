@@ -107,8 +107,8 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
       });
       this.logger.debug(`Published message to ${topic}`, message);
     } catch (error) {
-      this.logger.error(`Error publishing to ${topic}`, error);
-      throw error;
+      // Never rethrow — Kafka is a side-effect. DB work already committed.
+      this.logger.error(`Kafka publish failed [${topic}]: ${(error as Error).message}`);
     }
   }
 
