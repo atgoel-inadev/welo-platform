@@ -1,5 +1,5 @@
 import { IsEmail, IsString, MinLength, IsOptional, IsEnum } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum UserRole {
   ADMIN = 'ADMIN',
@@ -46,55 +46,82 @@ export class RegisterDto {
 }
 
 export class RefreshTokenDto {
-  @ApiProperty()
+  @ApiProperty({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...', description: 'JWT refresh token' })
   @IsString()
   refreshToken: string;
 }
 
 export class UpdateProfileDto {
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional({ example: 'Jane Doe', description: 'Updated display name' })
   @IsString()
   @IsOptional()
   name?: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional({ example: 'jane@welo.com', description: 'Updated email address' })
   @IsEmail()
   @IsOptional()
   email?: string;
 }
 
 export class ChangePasswordDto {
-  @ApiProperty()
+  @ApiProperty({ example: 'oldPassword123', description: 'Current password' })
   @IsString()
   currentPassword: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'newSecurePass456', description: 'New password (min 6 chars)' })
   @IsString()
   @MinLength(6)
   newPassword: string;
 }
 
-export class AuthResponse {
-  accessToken: string;
-  refreshToken: string;
-  user: UserResponse;
-  expiresIn: number;
-}
-
 export class UserResponse {
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'User ID' })
   id: string;
+
+  @ApiProperty({ example: 'admin@welo.com' })
   email: string;
+
+  @ApiProperty({ example: 'John Admin' })
   name: string;
+
+  @ApiProperty({ enum: UserRole, example: 'ADMIN' })
   role: UserRole;
+
+  @ApiProperty({ example: ['projects:read', 'projects:write', 'tasks:read', 'tasks:write', 'users:manage'], description: 'User permissions' })
   permissions: string[];
+
+  @ApiProperty({ enum: UserStatus, example: 'ACTIVE' })
   status: UserStatus;
+
+  @ApiProperty({ example: '2025-01-15T10:30:00.000Z' })
   createdAt: string;
 }
 
+export class AuthResponse {
+  @ApiProperty({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJlbWFpbCI6ImFkbWluQHdlbG8uY29tIiwicm9sZSI6IkFETUlOIn0', description: 'JWT access token' })
+  accessToken: string;
+
+  @ApiProperty({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...refresh', description: 'JWT refresh token' })
+  refreshToken: string;
+
+  @ApiProperty({ description: 'Authenticated user details', type: () => UserResponse })
+  user: UserResponse;
+
+  @ApiProperty({ example: 86400, description: 'Token expiration time in seconds' })
+  expiresIn: number;
+}
+
 export class TokenPayload {
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
   userId: string;
+
+  @ApiProperty({ example: 'admin@welo.com' })
   email: string;
+
+  @ApiProperty({ enum: UserRole, example: 'ADMIN' })
   role: UserRole;
+
+  @ApiProperty({ example: ['projects:read', 'projects:write'] })
   permissions: string[];
 }
 
@@ -126,27 +153,27 @@ export class CreateUserDto {
 }
 
 export class UpdateUserDto {
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional({ example: 'Jane Doe', description: 'Display name' })
   @IsString()
   @IsOptional()
   name?: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional({ example: 'jane@welo.com', description: 'Email address' })
   @IsEmail()
   @IsOptional()
   email?: string;
 
-  @ApiProperty({ enum: UserRole, required: false })
+  @ApiPropertyOptional({ enum: UserRole, example: UserRole.REVIEWER, description: 'User role' })
   @IsEnum(UserRole)
   @IsOptional()
   role?: UserRole;
 
-  @ApiProperty({ enum: UserStatus, required: false })
+  @ApiPropertyOptional({ enum: UserStatus, example: UserStatus.ACTIVE, description: 'Account status' })
   @IsEnum(UserStatus)
   @IsOptional()
   status?: UserStatus;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional({ example: 'newPassword123', description: 'New password (min 6 chars)' })
   @IsString()
   @MinLength(6)
   @IsOptional()
