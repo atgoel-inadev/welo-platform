@@ -109,11 +109,22 @@ export class UIConfigurationService {
 
     const uiConfig = project.configuration?.uiConfiguration;
 
-    if (!uiConfig || !uiConfig.configuration) {
+    if (!uiConfig) {
       throw new NotFoundException(`No UI configuration found for project ${projectId}`);
     }
 
-    const versions = project.configuration?.uiConfiguration?.['versions'] || [];
+    // Support both formats:
+    //   Nested (saved from UI Builder): { name, description, configuration: { widgets, ... }, versions: [...] }
+    //   Legacy/seed (flat):             { theme, layout, widgets: [...], ... }
+    const isNested = !!uiConfig.configuration;
+    const resolvedConfig = isNested ? uiConfig.configuration : uiConfig;
+
+    // Must have at least widgets to be useful
+    if (!resolvedConfig || (!resolvedConfig.widgets && !isNested)) {
+      throw new NotFoundException(`No UI configuration found for project ${projectId}`);
+    }
+
+    const versions = uiConfig['versions'] || [];
     const latestVersion = versions[versions.length - 1];
 
     return {
@@ -121,15 +132,15 @@ export class UIConfigurationService {
       version: latestVersion?.version || '1.0.0',
       name: uiConfig.name || 'UI Configuration',
       description: uiConfig.description,
-      configuration: latestVersion?.configuration || uiConfig.configuration,
+      configuration: latestVersion?.configuration || resolvedConfig,
       projectId,
       createdBy: latestVersion?.createdBy || project.createdBy,
       createdAt: latestVersion?.createdAt ? new Date(latestVersion.createdAt) : project.createdAt,
       metadata: {
-        totalWidgets: uiConfig.configuration?.widgets?.length || 0,
-        fileType: uiConfig.configuration?.fileType,
-        responseType: uiConfig.configuration?.responseType,
-        pipelineModes: this.extractPipelineModes(uiConfig.configuration),
+        totalWidgets: resolvedConfig?.widgets?.length || 0,
+        fileType: resolvedConfig?.fileType,
+        responseType: resolvedConfig?.responseType,
+        pipelineModes: this.extractPipelineModes(resolvedConfig),
       },
     };
   }
@@ -463,7 +474,8 @@ export class UIConfigurationService {
     // Fall back to legacy structure
     const versions = uiConfig.versions || [];
     const latestVersion = versions[versions.length - 1];
-    const configuration = latestVersion?.configuration || uiConfig.configuration;
+    const isNested = !!uiConfig.configuration;
+    const configuration = latestVersion?.configuration || (isNested ? uiConfig.configuration : uiConfig);
 
     // Return legacy format (will be handled by frontend)
     return {
