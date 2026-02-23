@@ -20,8 +20,9 @@ Never integrate untested backend code with frontend.
 [ ] 3. Build service once
 [ ] 4. Test backend with curl (15 min)
 [ ] 5. Fix issues → rebuild → retest
-[ ] 6. Implement frontend (30 min)
-[ ] 7. Integration test (15 min)
+[ ] 6. Regenerate API clients (5 min) ⭐ NEW
+[ ] 7. Implement frontend (30 min)
+[ ] 8. Integration test (15 min)
 ```
 
 **Total Time:** ~2 hours | **Rebuilds:** 1-2
@@ -72,6 +73,41 @@ curl -X POST "http://localhost:3003/api/v1/tasks/$taskId/assign" \
   -H "Content-Type: application/json" \
   -d '{"userId": "user-id", "workflowStage": "ANNOTATION"}'
 ```
+
+### Frontend API Client Generation ⭐ NEW
+
+**MANDATORY** after ANY backend API changes (new endpoints, method renames, DTO changes).
+
+```powershell
+# Ensure all backend services are running
+cd welo-platform
+docker compose ps
+
+# Navigate to frontend and regenerate API clients
+cd ../welo-platform-ui
+npm run generate:api
+```
+
+**What happens:**
+- Fetches live OpenAPI/Swagger specs from all backend services
+- Generates type-safe API client functions in `src/generated/`
+- TypeScript will catch API mismatches at compile time (not runtime!)
+
+**When to run:**
+- ✅ After adding/modifying backend endpoints
+- ✅ After changing DTOs or validation rules
+- ✅ Before implementing frontend changes that use backend APIs
+
+**Usage in Frontend:**
+```typescript
+// Import generated function
+import { getTasksTaskId, updateTasksTaskId } from '../generated/taskApi';
+
+// Use it - auth tokens automatically applied
+const task = await getTasksTaskId(taskId);
+```
+
+**Config:** `welo-platform-ui/orval.config.ts`
 
 ---
 

@@ -316,6 +316,61 @@ When implementing features, Copilot MUST proactively:
    - [ ] Consider cascade behavior (prefer explicit over automatic)
    - [ ] Test migration up and down
 
+### Frontend API Client Generation (CRITICAL)
+
+**MANDATORY**: After ANY backend API changes (new endpoints, renamed methods, changed DTOs), regenerate the frontend API clients to ensure compile-time type safety.
+
+**Workflow:**
+
+1. **Backend Changes Complete**
+   - Ensure Swagger/OpenAPI decorators are added (`@ApiProperty()`, `@ApiResponse()`, etc.)
+   - Ensure service is running: `docker compose ps <service-name>`
+   - Verify Swagger UI accessible: `http://localhost:<port>/api/docs`
+
+2. **Regenerate API Clients**
+   ```bash
+   cd welo-platform-ui
+   npm run generate:api
+   ```
+   
+   **Prerequisites:** All backend services MUST be running (`docker compose up -d`)
+
+3. **Verify Generation**
+   - Check `welo-platform-ui/src/generated/` for updated files:
+     - `authApi.ts` (port 3002)
+     - `workflowApi.ts` (port 3001)
+     - `taskApi.ts` (port 3003)
+     - `projectApi.ts` (port 3004)
+     - `annotationQaApi.ts` (port 3005)
+   - TypeScript compilation should catch any breaking changes
+   - If backend renamed `fetchProjectById` → `getProject`, TypeScript will error at compile time
+
+4. **Update Frontend Code**
+   - Import generated functions directly:
+     ```typescript
+     import { getTasksTaskId, updateTasksTaskId } from '../generated/taskApi';
+     ```
+   - Generated calls automatically use auth-aware `ApiClient` instances via `src/lib/mutators.ts`
+   - Bearer tokens and 401-redirect interceptors are applied automatically
+
+**When to Regenerate:**
+- ✅ After adding new backend endpoints
+- ✅ After renaming backend methods
+- ✅ After changing request/response DTOs
+- ✅ After modifying backend validation rules
+- ✅ Before deploying frontend changes that use backend APIs
+
+**Benefits:**
+- **Compile-Time Safety**: TypeScript catches API mismatches before runtime
+- **Auto-Complete**: IDE provides full IntelliSense for all backend endpoints
+- **Single Source of Truth**: Backend Swagger spec drives frontend types
+- **Zero Manual Sync**: No manual interface copying between backend/frontend
+
+**Configuration:**
+- Orval config: `welo-platform-ui/orval.config.ts`
+- Mutators: `welo-platform-ui/src/lib/mutators.ts`
+- Generated output: `welo-platform-ui/src/generated/`
+
 ### TypeORM Critical Rules
 
 **NEVER** save parent entity with loaded child relations. This causes NULL constraint violations.

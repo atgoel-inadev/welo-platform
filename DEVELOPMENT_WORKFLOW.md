@@ -318,6 +318,68 @@ If something goes wrong:
 
 ---
 
+### Step 3.5: Regenerate API Clients (5 minutes)
+
+**MANDATORY** after ANY backend API changes (new endpoints, method renames, DTO changes).
+
+**Actions:**
+```bash
+# Ensure all services are running
+cd welo-platform
+docker compose ps
+
+# Navigate to frontend
+cd ../welo-platform-ui
+
+# Regenerate API clients from live Swagger specs
+npm run generate:api
+```
+
+**What This Does:**
+- Fetches OpenAPI/Swagger specs from all running backend services
+- Generates fully-typed API client functions in `src/generated/`
+- Each service gets its own file:
+  - `authApi.ts` (port 3002)
+  - `workflowApi.ts` (port 3001)
+  - `taskApi.ts` (port 3003)
+  - `projectApi.ts` (port 3004)
+  - `annotationQaApi.ts` (port 3005)
+
+**Benefits:**
+- ✅ **Compile-Time Type Safety**: If backend renames `fetchProjectById` → `getProject`, TypeScript will error at compile time
+- ✅ **Auto-Complete**: Full IntelliSense for all backend endpoints
+- ✅ **Single Source of Truth**: Backend Swagger spec drives frontend types
+- ✅ **No Manual Sync**: Zero manual interface copying
+
+**Generated Functions Usage:**
+```typescript
+// Import generated function directly
+import { getTasksTaskId, updateTasksTaskId } from '../generated/taskApi';
+
+// Use it - auth tokens and interceptors applied automatically
+const task = await getTasksTaskId(taskId);
+```
+
+**Prerequisites:**
+- All backend services must be running
+- Backend must have Swagger decorators (`@ApiProperty()`, `@ApiResponse()`)
+- Verify Swagger UI: `http://localhost:<port>/api/docs`
+
+**When to Run:**
+- ✅ After adding new backend endpoints
+- ✅ After renaming backend methods
+- ✅ After changing request/response DTOs
+- ✅ After modifying validation rules
+- ✅ Before implementing frontend changes that use backend APIs
+
+**Configuration:**
+- Orval config: `welo-platform-ui/orval.config.ts`
+- Auth mutators: `welo-platform-ui/src/lib/mutators.ts`
+
+**Output:** Type-safe API client functions ready for frontend use
+
+---
+
 ### Step 4: Implement Frontend (20-45 minutes)
 
 **Actions:**
