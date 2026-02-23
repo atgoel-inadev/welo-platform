@@ -13,6 +13,24 @@ import {
 export class BatchController {
   constructor(private readonly batchService: BatchService) {}
 
+  /**
+   * List all batches, optionally filtered by projectId
+   * GET /api/v1/batches?projectId=xxx
+   */
+  @Get()
+  async listBatches(@Query('projectId') projectId?: string) {
+    return this.batchService.listBatches(projectId);
+  }
+
+  /**
+   * Get a single batch by ID
+   * GET /api/v1/batches/:id
+   */
+  @Get(':id')
+  async getBatch(@Param('id') id: string) {
+    return this.batchService.getBatch(id);
+  }
+
   @Post()
   async createBatch(@Body() dto: CreateBatchDto) {
     return this.batchService.createBatch(dto);

@@ -6,6 +6,7 @@ import { TaskService } from './task/task.service';
 import { TaskRenderingService } from './services/task-rendering.service';
 import { StageAssignmentService } from './services/stage-assignment.service';
 import { PluginRunnerService } from './services/plugin-runner.service';
+import { CommentService } from './services/comment.service';
 import { BatchController } from './batch/batch.controller';
 import { HealthController } from './health/health.controller';
 import { KafkaModule } from './kafka/kafka.module';
@@ -89,12 +90,13 @@ import {
       Workflow,
       User,
       Queue,
+      Comment,
       PluginSecret,
       PluginExecutionLog,
     ]),
     KafkaModule,
   ],
   controllers: [TaskController, BatchController, HealthController],
-  providers: [TaskService, TaskRenderingService, StageAssignmentService, PluginRunnerService],
+  providers: [TaskService, TaskRenderingService, StageAssignmentService, PluginRunnerService, CommentService],
 })
 export class AppModule {}
