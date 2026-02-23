@@ -1,13 +1,20 @@
 import { Controller, Get, Param, Res, HttpException, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 
+@ApiTags('media')
 @Controller('media')
 export class MediaController {
   private readonly mediaPath = process.env.MEDIA_FILES_PATH || '/app/media';
 
   @Get(':filename')
+  @ApiOperation({ summary: 'Serve a media file by filename (images, audio, video, documents)' })
+  @ApiParam({ name: 'filename', description: 'Filename to serve (e.g., image.jpg, audio.mp3)' })
+  @ApiResponse({ status: 200, description: 'File streamed successfully' })
+  @ApiResponse({ status: 404, description: 'File not found' })
+  @ApiResponse({ status: 500, description: 'Error serving file' })
   async getMediaFile(@Param('filename') filename: string, @Res() res: Response) {
     try {
       // Security: Prevent directory traversal
