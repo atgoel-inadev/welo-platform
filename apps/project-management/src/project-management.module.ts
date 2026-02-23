@@ -13,6 +13,8 @@ import { UIConfigurationService } from './services/ui-configuration.service';
 import { BatchService } from './services/batch.service';
 import { CustomerService } from './services/customer.service';
 import { ProjectTeamService } from './services/project-team.service';
+import { PluginService } from './services/plugin.service';
+import { SecretService } from './services/secret.service';
 import { KafkaModule } from './kafka/kafka.module';
 import {
   Project,
@@ -35,6 +37,8 @@ import {
   Comment,
   Template,
   ProjectTeamMember,
+  PluginSecret,
+  PluginExecutionLog,
 } from '@app/common/entities';
 
 @Module({
@@ -67,6 +71,8 @@ import {
         Comment,
         Template,
         ProjectTeamMember,
+        PluginSecret,
+        PluginExecutionLog,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
@@ -82,10 +88,12 @@ import {
       AnnotationResponse,
       Batch,
       ProjectTeamMember,
+      PluginSecret,
+      PluginExecutionLog,
     ]),
     KafkaModule,
   ],
   controllers: [ProjectController, BatchController, CustomerController, UIConfigurationController, HealthController, MediaController],
-  providers: [ProjectService, WorkflowConfigService, AnnotationQuestionService, UIConfigurationService, BatchService, CustomerService, ProjectTeamService],
+  providers: [ProjectService, WorkflowConfigService, AnnotationQuestionService, UIConfigurationService, BatchService, CustomerService, ProjectTeamService, PluginService, SecretService],
 })
 export class ProjectManagementModule {}

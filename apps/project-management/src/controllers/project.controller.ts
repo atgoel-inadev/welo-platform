@@ -1,8 +1,10 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Headers } from '@nestjs/common';
 import { ProjectService } from '../services/project.service';
 import { WorkflowConfigService } from '../services/workflow-config.service';
 import { AnnotationQuestionService } from '../services/annotation-question.service';
 import { ProjectTeamService } from '../services/project-team.service';
+import { PluginService } from '../services/plugin.service';
+import { SecretService } from '../services/secret.service';
 import {
   CreateProjectDto,
   UpdateProjectDto,
@@ -19,6 +21,8 @@ export class ProjectController {
     private readonly workflowConfigService: WorkflowConfigService,
     private readonly questionService: AnnotationQuestionService,
     private readonly projectTeamService: ProjectTeamService,
+    private readonly pluginService: PluginService,
+    private readonly secretService: SecretService,
   ) {}
 
   @Get()
@@ -188,5 +192,83 @@ export class ProjectController {
     @Param('userId') userId: string,
   ) {
     return this.projectTeamService.removeUserFromProject(projectId, userId);
+  }
+
+  // ─── Plugin Management ─────────────────────────────────────────────────────
+
+  @Get(':id/plugins')
+  async listPlugins(@Param('id') projectId: string) {
+    return this.pluginService.listPlugins(projectId);
+  }
+
+  @Post(':id/plugins')
+  async createPlugin(@Param('id') projectId: string, @Body() dto: any) {
+    return this.pluginService.createPlugin(projectId, dto);
+  }
+
+  @Patch(':id/plugins/:pluginId')
+  async updatePlugin(
+    @Param('id') projectId: string,
+    @Param('pluginId') pluginId: string,
+    @Body() dto: any,
+  ) {
+    return this.pluginService.updatePlugin(projectId, pluginId, dto);
+  }
+
+  @Delete(':id/plugins/:pluginId')
+  async deletePlugin(
+    @Param('id') projectId: string,
+    @Param('pluginId') pluginId: string,
+  ) {
+    return this.pluginService.deletePlugin(projectId, pluginId);
+  }
+
+  @Post(':id/plugins/:pluginId/deploy')
+  async deployPlugin(
+    @Param('id') projectId: string,
+    @Param('pluginId') pluginId: string,
+  ) {
+    return this.pluginService.deployPlugin(projectId, pluginId);
+  }
+
+  @Post(':id/plugins/:pluginId/toggle')
+  async togglePlugin(
+    @Param('id') projectId: string,
+    @Param('pluginId') pluginId: string,
+    @Body('enabled') enabled: boolean,
+  ) {
+    return this.pluginService.togglePlugin(projectId, pluginId, enabled);
+  }
+
+  // ─── Secret Management ─────────────────────────────────────────────────────
+
+  @Get(':id/secrets')
+  async listSecrets(@Param('id') projectId: string) {
+    return { success: true, data: { secrets: await this.secretService.listSecrets(projectId) } };
+  }
+
+  @Post(':id/secrets')
+  async createSecret(
+    @Param('id') projectId: string,
+    @Body() dto: { name: string; value: string; description?: string },
+    @Headers('x-user-id') userId: string,
+  ) {
+    const secret = await this.secretService.createSecret(
+      projectId,
+      dto.name,
+      dto.value,
+      dto.description,
+      userId ?? null,
+    );
+    return { success: true, data: { secret } };
+  }
+
+  @Delete(':id/secrets/:name')
+  async deleteSecret(
+    @Param('id') projectId: string,
+    @Param('name') name: string,
+  ) {
+    await this.secretService.deleteSecret(projectId, name);
+    return { success: true, message: `Secret "${name}" deleted` };
   }
 }

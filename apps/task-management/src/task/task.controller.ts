@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, Htt
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { TaskService } from './task.service';
 import { StageAssignmentService } from '../services/stage-assignment.service';
+import { PluginRunnerService, PluginExecutePayload } from '../services/plugin-runner.service';
 import {
   CreateTaskDto,
   CreateTaskBulkDto,
@@ -28,6 +29,7 @@ export class TaskController {
   constructor(
     private readonly taskService: TaskService,
     private readonly stageAssignmentService: StageAssignmentService,
+    private readonly pluginRunnerService: PluginRunnerService,
   ) {}
 
   @Get()
@@ -273,5 +275,22 @@ export class TaskController {
     @Query('qualityScore') qualityScore: number,
   ) {
     return this.stageAssignmentService.checkStageQualityGate(taskId, stageId, qualityScore);
+  }
+
+  // ─── Plugin Execution ──────────────────────────────────────────────────────
+
+  @Post(':taskId/plugins/execute')
+  @ApiOperation({
+    summary: 'Execute a plugin for a question answer (on-blur validation)',
+    description: 'Runs API or script plugin and returns PASS/WARN/FAIL result. Answer value is never logged.',
+  })
+  @ApiResponse({ status: 200, description: 'Plugin executed successfully' })
+  @ApiResponse({ status: 404, description: 'Task or plugin not found' })
+  async executePlugin(
+    @Param('taskId') taskId: string,
+    @Body() dto: PluginExecutePayload & { projectId: string },
+  ) {
+    const { projectId, ...payload } = dto;
+    return this.pluginRunnerService.execute(taskId, projectId, payload);
   }
 }

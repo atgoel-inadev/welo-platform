@@ -157,6 +157,7 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: task-management
       KAFKA_GROUP_ID: task-management-group
+      PLUGIN_SECRETS_KEY: 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
     ports:
       - "3003:3003"
     depends_on:
@@ -225,6 +226,7 @@ services:
       KAFKA_CLIENT_ID: project-management
       KAFKA_GROUP_ID: project-management-group
       MEDIA_FILES_PATH: /app/media
+      PLUGIN_SECRETS_KEY: 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
     ports:
       - "3004:3004"
     volumes:
@@ -235,6 +237,56 @@ services:
       redis:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+    networks:
+      - welo-network
+
+  # ── Nginx API Gateway ─────────────────────────────────────────────
+  # Single entry point on port 80. Routes by path prefix:
+  #   /auth/*           → auth-service:3002
+  #   /tasks/*          → task-management:3003
+  #   /projects/*       → project-management:3004
+  #   /workflows/*      → workflow-engine:3001
+  #   /annotation-qa/*  → annotation-qa-service:3005
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: welo-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      task-management:
+        condition: service_healthy
+      project-management:
+        condition: service_healthy
+      workflow-engine:
+        condition: service_healthy
+      annotation-qa-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - welo-network
+
+  # ── Cloudflare Quick Tunnel ────────────────────────────────────────
+  # Free, no account or signup needed.
+  # Exposes nginx:80 → public HTTPS *.trycloudflare.com URL.
+  # Get URL after startup:
+  #   docker-compose logs cloudflared | grep trycloudflare
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: welo-cloudflared
+    restart: unless-stopped
+    command: --no-autoupdate tunnel --url http://nginx:80
+    depends_on:
+      nginx:
         condition: service_healthy
     networks:
       - welo-network

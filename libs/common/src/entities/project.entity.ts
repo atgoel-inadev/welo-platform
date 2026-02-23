@@ -93,6 +93,32 @@ export class Project extends BaseEntity {
     };
     // Supported file types for this project
     supportedFileTypes?: Array<'CSV' | 'TXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'PDF'>;
+    // Plugin definitions for this project
+    plugins?: Array<{
+      id: string;
+      name: string;
+      description?: string;
+      type: 'API' | 'SCRIPT';
+      enabled: boolean;
+      trigger: 'ON_BLUR' | 'ON_SUBMIT';
+      onFailBehavior: 'HARD_BLOCK' | 'SOFT_WARN' | 'ADVISORY';
+      questionBindings: string[];
+      isDraft: boolean;
+      version: number;
+      createdAt: string;
+      updatedAt: string;
+      deployedAt?: string;
+      apiConfig?: {
+        url: string;
+        method: 'GET' | 'POST' | 'PUT' | 'PATCH';
+        headers: Record<string, string>;
+        payload?: string;
+        responseMapping: { resultPath: string; messagePath?: string };
+        timeout: number;
+        retries: number;
+      };
+      scriptCode?: string;
+    }>;
   };
 
   @Column({ name: 'created_by', type: 'uuid' })

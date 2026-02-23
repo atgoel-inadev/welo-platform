@@ -57,11 +57,15 @@ export class UIConfigurationService {
     // Update configuration with new UI and version history
     const updatedConfig = {
       ...currentConfig,
-      uiConfiguration: dto.configuration,
-      uiConfigurationVersions: [
-        ...(currentConfig.uiConfiguration?.['versions'] || []),
-        newVersionEntry,
-      ].slice(-50), // Keep last 50 versions
+      uiConfiguration: {
+        name: dto.name,
+        description: dto.description,
+        configuration: dto.configuration,
+        versions: [
+          ...(currentConfig.uiConfiguration?.['versions'] || []),
+          newVersionEntry,
+        ].slice(-50), // Keep last 50 versions
+      },
     };
 
     // Save updated project configuration

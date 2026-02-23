@@ -5,6 +5,7 @@ import { TaskController } from './task/task.controller';
 import { TaskService } from './task/task.service';
 import { TaskRenderingService } from './services/task-rendering.service';
 import { StageAssignmentService } from './services/stage-assignment.service';
+import { PluginRunnerService } from './services/plugin-runner.service';
 import { BatchController } from './batch/batch.controller';
 import { HealthController } from './health/health.controller';
 import { KafkaModule } from './kafka/kafka.module';
@@ -29,6 +30,8 @@ import {
   Notification,
   Comment,
   Template,
+  PluginSecret,
+  PluginExecutionLog,
 } from '@app/common';
 
 @Module({
@@ -67,6 +70,8 @@ import {
           Notification,
           Comment,
           Template,
+          PluginSecret,
+          PluginExecutionLog,
         ],
         synchronize: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
@@ -84,10 +89,12 @@ import {
       Workflow,
       User,
       Queue,
+      PluginSecret,
+      PluginExecutionLog,
     ]),
     KafkaModule,
   ],
   controllers: [TaskController, BatchController, HealthController],
-  providers: [TaskService, TaskRenderingService, StageAssignmentService],
+  providers: [TaskService, TaskRenderingService, StageAssignmentService, PluginRunnerService],
 })
 export class AppModule {}

@@ -33,3 +33,7 @@ export * from './audit-log.entity';
 export * from './notification.entity';
 export * from './comment.entity';
 export * from './template.entity';
+
+// Plugin Management Entities
+export * from './plugin-secret.entity';
+export * from './plugin-execution-log.entity';
