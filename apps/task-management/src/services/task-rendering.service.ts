@@ -132,6 +132,8 @@ export class TaskRenderingService {
           `Task ${task.id.substring(0, 8)}`,
         description: (task.dataPayload as any)?.context?.description || '',
         fileUrls: task.fileUrl ? [task.fileUrl] : [],
+        fileType: task.fileType,
+        fileMetadata: task.fileMetadata || {},
         metadata: task.fileMetadata || {},
         currentReviewLevel: task.currentReviewLevel || 0,
         status: task.status,

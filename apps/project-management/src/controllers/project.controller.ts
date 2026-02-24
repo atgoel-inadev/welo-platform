@@ -38,14 +38,14 @@ export class ProjectController {
   async listProjects(
     @Query('customerId') customerId?: string,
     @Query('status') status?: string,
-    @Query('page') page: number = 1,
-    @Query('pageSize') pageSize: number = 50,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
     return this.projectService.listProjects({
       customerId,
       status,
-      page,
-      pageSize,
+      page: page ? Number(page) : 1,
+      pageSize: pageSize ? Number(pageSize) : 50,
     });
   }
 
@@ -73,6 +73,18 @@ export class ProjectController {
     @Body() updateDto: UpdateProjectDto,
   ) {
     return this.projectService.updateProject(id, updateDto);
+  }
+
+  @Patch(':id/status')
+  @ApiOperation({ summary: 'Update project status' })
+  @ApiResponse({ status: 200, description: 'Project status updated' })
+  @ApiResponse({ status: 404, description: 'Project not found' })
+  @ApiBody({ schema: { properties: { status: { type: 'string', enum: ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED', 'ARCHIVED'], example: 'ACTIVE' } } } })
+  async updateProjectStatus(
+    @Param('id') id: string,
+    @Body('status') status: string,
+  ) {
+    return this.projectService.updateProject(id, { status });
   }
 
   @Delete(':id')

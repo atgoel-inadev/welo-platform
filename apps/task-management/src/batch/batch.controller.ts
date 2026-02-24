@@ -22,28 +22,30 @@ export class BatchController {
   async findAll(
     @Query('projectId') projectId?: string,
     @Query('status') status?: string,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 20,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const where: FindOptionsWhere<Batch> = {};
     if (projectId) where.projectId = projectId;
     if (status) where.status = status as any;
 
-    const skip = (page - 1) * limit;
+    const pageNum = page ? Number(page) : 1;
+    const limitNum = limit ? Number(limit) : 20;
+    const skip = (pageNum - 1) * limitNum;
 
     const [batches, total] = await this.batchRepository.findAndCount({
       where,
       relations: ['project'],
       skip,
-      take: limit,
+      take: limitNum,
       order: { createdAt: 'DESC' },
     });
 
     return {
       data: batches,
       total,
-      page,
-      limit,
+      page: pageNum,
+      limit: limitNum,
     };
   }
 

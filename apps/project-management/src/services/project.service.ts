@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Project, Task, Assignment } from '@app/common/entities';
@@ -6,6 +6,8 @@ import { ProjectStatus } from '@app/common/enums';
 
 @Injectable()
 export class ProjectService {
+  private readonly logger = new Logger(ProjectService.name);
+
   constructor(
     @InjectRepository(Project)
     private readonly projectRepository: Repository<Project>,
@@ -76,6 +78,14 @@ export class ProjectService {
   }
 
   async createProject(createDto: any) {
+    // Log incoming request for debugging
+    this.logger.log(`Creating project with data: ${JSON.stringify({
+      name: createDto.name,
+      customerId: createDto.customerId,
+      projectType: createDto.projectType,
+      createdBy: createDto.createdBy
+    })}`);
+
     // Build workflow configuration with stage support
     const workflowConfiguration = this.buildWorkflowConfiguration(createDto.workflow_config);
 
@@ -93,7 +103,7 @@ export class ProjectService {
         qualityThresholds: createDto.qualityThresholds || {},
         workflowRules: createDto.workflowRules || {},
         uiConfiguration: createDto.uiConfiguration || {},
-        annotationQuestions: [],
+        annotationQuestions: Array.isArray(createDto.annotationSchema) ? createDto.annotationSchema : [],
         workflowConfiguration,
         supportedFileTypes: createDto.supportedFileTypes || [],
       },

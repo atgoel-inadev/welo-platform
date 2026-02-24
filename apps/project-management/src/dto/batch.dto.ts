@@ -1,19 +1,32 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsString, IsUUID, IsOptional, IsInt, Min, Max, IsDateString } from 'class-validator';
 
 export class CreateBatchDto {
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440003', description: 'Project ID this batch belongs to' })
+  @IsNotEmpty({ message: 'Project ID is required' })
+  @IsUUID('4', { message: 'Project ID must be a valid UUID' })
   projectId: string;
 
   @ApiProperty({ example: 'Batch 1 - Initial Data', description: 'Batch name' })
+  @IsNotEmpty({ message: 'Batch name is required' })
+  @IsString()
   name: string;
 
   @ApiPropertyOptional({ example: 'First batch of training data', description: 'Batch description' })
+  @IsOptional()
+  @IsString()
   description?: string;
 
   @ApiPropertyOptional({ example: 5, description: 'Priority level (1=lowest, 10=highest)' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10)
   priority?: number;
 
   @ApiPropertyOptional({ example: '2025-04-30', description: 'Batch due date' })
+  @IsOptional()
+  @IsDateString()
   dueDate?: Date;
 
   @ApiPropertyOptional({

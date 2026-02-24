@@ -156,6 +156,23 @@ export class TaskService {
     return task;
   }
 
+  /**
+   * Fetch task WITHOUT relations for update operations.
+   * Prevents TypeORM cascade issues that nullify child foreign keys.
+   */
+  private async getTaskForUpdate(taskId: string): Promise<Task> {
+    const task = await this.taskRepository.findOne({
+      where: { id: taskId },
+      // NO RELATIONS - prevents cascade save from nullifying child FKs
+    });
+
+    if (!task) {
+      throw new NotFoundException(`Task with ID ${taskId} not found`);
+    }
+
+    return task;
+  }
+
   async listTasks(filter: TaskFilterDto): Promise<{ tasks: Task[]; total: number; page: number; pageSize: number }> {
     const page = filter.page || 1;
     const pageSize = filter.pageSize || 50;
@@ -223,7 +240,8 @@ export class TaskService {
   }
 
   async updateTask(taskId: string, dto: UpdateTaskDto): Promise<Task> {
-    const task = await this.getTask(taskId);
+    // CRITICAL: Fetch WITHOUT relations to prevent cascade save issues
+    const task = await this.getTaskForUpdate(taskId);
 
     if (dto.status) {
       task.status = TaskStatus[dto.status.toUpperCase()];
@@ -399,7 +417,8 @@ export class TaskService {
   }
 
   async submitTask(dto: SubmitTaskDto): Promise<Task> {
-    const task = await this.getTask(dto.taskId);
+    // CRITICAL: Fetch WITHOUT relations to prevent cascade save from nullifying assignment.task_id
+    const task = await this.getTaskForUpdate(dto.taskId);
     const assignment = await this.assignmentRepository.findOne({
       where: { id: dto.assignmentId },
     });
@@ -478,7 +497,8 @@ export class TaskService {
   }
 
   async updateTaskStatus(taskId: string, dto: UpdateTaskStatusDto): Promise<Task> {
-    const task = await this.getTask(taskId);
+    // CRITICAL: Fetch WITHOUT relations to prevent cascade save issues
+    const task = await this.getTaskForUpdate(taskId);
 
     const oldStatus = task.status;
     task.status = TaskStatus[dto.status.toUpperCase()];
@@ -530,7 +550,8 @@ export class TaskService {
   }
 
   async sendEvent(taskId: string, dto: TaskTransitionDto): Promise<Task> {
-    const task = await this.getTask(taskId);
+    // CRITICAL: Fetch WITHOUT relations to prevent cascade save issues
+    const task = await this.getTaskForUpdate(taskId);
 
     // Update machine state with event
     task.previousState = { ...task.machineState };
@@ -892,7 +913,8 @@ export class TaskService {
     reason?: string,
     workflowStage?: string,
   ): Promise<{ task: Task; assignment: Assignment }> {
-    const task = await this.getTask(taskId);
+    // CRITICAL: Fetch WITHOUT relations to prevent cascade save issues
+    const task = await this.getTaskForUpdate(taskId);
 
     const newUser = await this.userRepository.findOne({ where: { id: newUserId } });
     if (!newUser) {

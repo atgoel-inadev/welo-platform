@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsUUID, IsNotEmpty, IsOptional, IsEnum, IsArray, IsObject } from 'class-validator';
 
 /**
  * Workflow Stage DTO - Represents a single stage in the workflow pipeline
@@ -93,42 +94,66 @@ export class ExtendedWorkflowConfigDto {
 
 export class CreateProjectDto {
   @ApiProperty({ example: 'Podcast Transcription QA', description: 'Project name' })
+  @IsNotEmpty()
+  @IsString()
   name: string;
 
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440001', description: 'Customer ID' })
+  @IsNotEmpty()
+  @IsUUID()
   customerId: string;
 
   @ApiPropertyOptional({ example: 'Quality assurance for podcast transcriptions', description: 'Project description' })
+  @IsOptional()
+  @IsString()
   description?: string;
 
   @ApiProperty({ example: 'ANNOTATION', description: 'Project type (ANNOTATION, REVIEW, etc.)' })
+  @IsNotEmpty()
+  @IsString()
   projectType: string;
 
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440099', description: 'User ID of creator' })
+  @IsNotEmpty()
+  @IsUUID()
   createdBy: string;
 
   @ApiPropertyOptional({ example: '2025-03-01', description: 'Project start date' })
+  @IsOptional()
   startDate?: Date;
 
   @ApiPropertyOptional({ example: '2025-06-30', description: 'Project end date' })
+  @IsOptional()
   endDate?: Date;
 
   @ApiPropertyOptional({ description: 'Annotation schema definition' })
+  @IsOptional()
+  @IsArray()
   annotationSchema?: any;
 
   @ApiPropertyOptional({ description: 'Quality thresholds configuration' })
+  @IsOptional()
+  @IsObject()
   qualityThresholds?: any;
 
   @ApiPropertyOptional({ description: 'Workflow rules' })
+  @IsOptional()
+  @IsObject()
   workflowRules?: any;
 
   @ApiPropertyOptional({ description: 'UI configuration object for the annotation interface' })
+  @IsOptional()
+  @IsObject()
   uiConfiguration?: any;
 
   @ApiPropertyOptional({ type: [String], example: ['CSV', 'TXT', 'IMAGE'], description: 'Supported file types' })
+  @IsOptional()
+  @IsArray()
   supportedFileTypes?: string[];
   
   @ApiPropertyOptional({ type: ExtendedWorkflowConfigDto, description: 'Extended workflow configuration' })
+  @IsOptional()
+  @IsObject()
   // Extended workflow configuration
   workflow_config?: ExtendedWorkflowConfigDto;
 }

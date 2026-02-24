@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { Batch, Task, Project, Assignment, User, Workflow } from '@app/common/entities';
+import { Batch, Task, Project, Assignment, User, Workflow, ProjectTeamMember } from '@app/common/entities';
 import { BatchStatus, TaskStatus, TaskType, AssignmentStatus, AssignmentMethod, WorkflowStage, UserStatus, WorkflowStatus } from '@app/common/enums';
 import { KafkaService } from '../kafka/kafka.service';
 import { CreateBatchDto, UpdateBatchDto, AllocateFilesDto, AllocateFolderDto, ScanDirectoryDto, AssignTaskDto, PullNextTaskDto } from '../dto/batch.dto';
@@ -25,6 +25,8 @@ export class BatchService {
     private userRepository: Repository<User>,
     @InjectRepository(Workflow)
     private workflowRepository: Repository<Workflow>,
+    @InjectRepository(ProjectTeamMember)
+    private teamMemberRepository: Repository<ProjectTeamMember>,
     private kafkaService: KafkaService,
   ) {}
 
@@ -437,11 +439,18 @@ export class BatchService {
       return null;
     }
 
-    // Get eligible users (users with ANNOTATOR role for the project)
-    const eligibleUsers = await this.getEligibleUsers(project.id);
+    // Determine workflow stage based on task status
+    // QUEUED/ASSIGNED tasks go to annotators (ANNOTATION stage)
+    // IN_REVIEW tasks go to reviewers (REVIEW stage)
+    const workflowStage = task.status === TaskStatus.IN_REVIEW 
+      ? WorkflowStage.REVIEW 
+      : WorkflowStage.ANNOTATION;
+
+    // Get eligible users (project team members with appropriate role)
+    const eligibleUsers = await this.getEligibleUsers(project.id, workflowStage);
 
     if (eligibleUsers.length === 0) {
-      this.logger.warn(`No eligible users found for project ${project.id}`);
+      this.logger.warn(`No eligible users found for project ${project.id} at stage ${workflowStage}`);
       return null;
     }
 
@@ -457,15 +466,27 @@ export class BatchService {
     }
   }
 
-  private async getEligibleUsers(projectId: string): Promise<User[]> {
-    // This would query users based on project membership and role
-    // For now, returning a simplified query
-    return this.userRepository.find({
+  private async getEligibleUsers(projectId: string, workflowStage: WorkflowStage): Promise<User[]> {
+    // Determine required role based on workflow stage
+    const requiredRole = workflowStage === WorkflowStage.REVIEW ? 'REVIEWER' : 'ANNOTATOR';
+
+    // Query project team members with the appropriate role
+    const teamMembers = await this.teamMemberRepository.find({
       where: {
-        role: In(['ANNOTATOR', 'REVIEWER']),
-        status: UserStatus.ACTIVE,
+        projectId,
+        role: requiredRole,
+        isActive: true,
       },
+      relations: ['user'],
     });
+
+    // Filter to only active users and extract user entities
+    const eligibleUsers = teamMembers
+      .filter(member => member.user && member.user.status === UserStatus.ACTIVE)
+      .map(member => member.user);
+
+    this.logger.debug(`Found ${eligibleUsers.length} eligible ${requiredRole}s for project ${projectId}`);
+    return eligibleUsers;
   }
 
   private async roundRobinSelection(users: User[], task: Task): Promise<string> {

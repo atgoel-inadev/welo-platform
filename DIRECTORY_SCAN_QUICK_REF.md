@@ -84,6 +84,14 @@ $batchName = "test"
 Get-ChildItem "../welo-platform-ui/public/uploads/$projectId/$batchName/"
 ```
 
+### Regenerate Frontend API Clients
+**After modifying scan-directory endpoint or any backend API:**
+```powershell
+cd ../welo-platform-ui
+npm run generate:api
+```
+This ensures TypeScript catches API changes at compile time.
+
 ---
 
 ## ⚙️ Configuration
