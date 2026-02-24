@@ -2,7 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, Htt
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { TaskService } from './task.service';
 import { StageAssignmentService } from '../services/stage-assignment.service';
-import { PluginRunnerService, PluginExecutePayload } from '../services/plugin-runner.service';
+import { PluginRunnerService, PluginExecutePayload, PluginTestPayload } from '../services/plugin-runner.service';
 import { CommentService, AddCommentDto, ResolveCommentDto } from '../services/comment.service';
 import {
   CreateTaskDto,
@@ -280,6 +280,19 @@ export class TaskController {
   }
 
   // ─── Plugin Execution ──────────────────────────────────────────────────────
+
+  @Post('plugins/test')
+  @ApiOperation({
+    summary: 'Test a plugin inline without saving (dry-run)',
+    description: 'Accepts the full plugin config in the request body. Nothing is persisted. Used by the plugin editor UI.',
+  })
+  @ApiResponse({ status: 200, description: 'Plugin test executed' })
+  async testPluginInline(
+    @Body() dto: PluginTestPayload & { projectId: string },
+  ) {
+    const { projectId, ...payload } = dto;
+    return this.pluginRunnerService.executeInline(projectId, payload);
+  }
 
   @Post(':taskId/plugins/execute')
   @ApiOperation({
