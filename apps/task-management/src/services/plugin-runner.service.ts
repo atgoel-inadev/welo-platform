@@ -18,6 +18,21 @@ export interface PluginExecutePayload {
   taskContext?: Record<string, any>;
 }
 
+/** Payload for inline/test execution — plugin config is sent directly, not looked up from DB */
+export interface PluginTestPayload {
+  questionId: string;
+  questionText: string;
+  questionType: string;
+  answerValue: any;
+  taskContext?: Record<string, any>;
+  plugin: {
+    type: 'API' | 'SCRIPT';
+    onFailBehavior?: string;
+    apiConfig?: any;
+    scriptCode?: string;
+  };
+}
+
 export interface PluginExecuteResult {
   result: 'PASS' | 'WARN' | 'FAIL' | 'ERROR' | 'TIMEOUT';
   message?: string;
@@ -300,5 +315,55 @@ export class PluginRunnerService {
       : 'ERROR';
 
     return { result, message: rawResult.message };
+  }
+
+  /**
+   * Execute a plugin inline — the plugin config is passed directly (no DB lookup).
+   * Used for "test before save" in the UI.
+   */
+  async executeInline(
+    projectId: string,
+    payload: PluginTestPayload,
+  ): Promise<PluginExecuteResult> {
+    const plugin = payload.plugin;
+    const startedAt = Date.now();
+    let result: PluginExecuteResult['result'] = 'ERROR';
+    let message: string | undefined;
+
+    const fakePayload: PluginExecutePayload = {
+      pluginId: 'test-inline',
+      questionId: payload.questionId,
+      questionText: payload.questionText,
+      questionType: payload.questionType,
+      answerValue: payload.answerValue,
+      taskContext: payload.taskContext,
+    };
+
+    try {
+      if (plugin.type === 'API') {
+        ({ result, message } = await this.executeApiPlugin(plugin, projectId, fakePayload));
+      } else if (plugin.type === 'SCRIPT') {
+        ({ result, message } = await this.executeScriptPlugin(plugin, fakePayload));
+      } else {
+        throw new Error(`Unknown plugin type: ${plugin.type}`);
+      }
+    } catch (err) {
+      const errorDetail = err instanceof Error ? err.message : String(err);
+      if (errorDetail?.toLowerCase().includes('timeout')) {
+        result = 'TIMEOUT';
+        message = 'Plugin execution timed out';
+      } else {
+        result = 'ERROR';
+        message = errorDetail || 'Plugin execution failed';
+      }
+      this.logger.error(`Inline plugin test error: ${errorDetail}`);
+    }
+
+    return {
+      result,
+      message,
+      executionTimeMs: Date.now() - startedAt,
+      onFailBehavior: plugin.onFailBehavior ?? 'ADVISORY',
+    };
   }
 }
