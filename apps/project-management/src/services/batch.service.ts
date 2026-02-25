@@ -418,11 +418,56 @@ export class BatchService {
   async autoAssignTasks(tasks: Task[], method: string): Promise<void> {
     const assignmentMethod = method as 'AUTO_ROUND_ROBIN' | 'AUTO_SKILL_BASED' | 'AUTO_WORKLOAD_BASED';
 
+    // CRITICAL: Track assignments in memory to ensure proper round-robin distribution
+    // Without this, all tasks get assigned to the same user because DB isn't updated yet
+    const pendingAssignments = new Map<string, number>(); // userId -> count
+
     for (const task of tasks) {
       try {
-        const userId = await this.selectUserForAssignment(task, assignmentMethod);
-        if (userId) {
+        // Get project to determine how many annotators are required per task
+        const project = await this.projectRepository.findOne({
+          where: { id: task.projectId },
+        });
+
+        if (!project) {
+          this.logger.warn(`Project ${task.projectId} not found for task ${task.id}`);
+          continue;
+        }
+
+        // Get current workflow stage configuration
+        const workflowStages = (project.configuration?.workflowConfiguration as any)?.stages || [];
+        const currentStageId = task.machineState?.context?.currentStage;
+        
+        // Find the current stage config
+        const currentStage = workflowStages.find((s: any) => s.id === currentStageId) || workflowStages[0];
+        
+        // Determine how many assignments to create
+        const assignmentsRequired = currentStage?.annotators_count || 1;
+
+        this.logger.log(`Task ${task.id}: Creating ${assignmentsRequired} assignments for stage ${currentStage?.name}`);
+
+        // Create multiple assignments for the task, passing pending assignments map
+        const selectedUserIds = await this.selectUsersForAssignment(
+          task,
+          assignmentMethod,
+          assignmentsRequired,
+          pendingAssignments
+        );
+
+        if (selectedUserIds.length === 0) {
+          this.logger.warn(`No users selected for task ${task.id}`);
+          continue;
+        }
+
+        // Assign task to each selected user
+        for (let i = 0; i < selectedUserIds.length; i++) {
+          const userId = selectedUserIds[i];
           await this.assignTaskToUser(task.id, userId, assignmentMethod);
+          
+          // Track this assignment in memory
+          pendingAssignments.set(userId, (pendingAssignments.get(userId) || 0) + 1);
+          
+          this.logger.log(`Task ${task.id} assigned to user ${userId} (${i + 1}/${assignmentsRequired})`);
         }
       } catch (error) {
         this.logger.error(`Failed to auto-assign task ${task.id}`, error);
@@ -430,19 +475,25 @@ export class BatchService {
     }
   }
 
-  private async selectUserForAssignment(task: Task, method: string): Promise<string | null> {
+  /**
+   * Select multiple users for assignment based on method and required count
+   */
+  private async selectUsersForAssignment(
+    task: Task,
+    method: string,
+    count: number,
+    pendingAssignments?: Map<string, number>
+  ): Promise<string[]> {
     const project = await this.projectRepository.findOne({
       where: { id: task.projectId },
     });
 
     if (!project) {
-      return null;
+      return [];
     }
 
     // Determine workflow stage based on task status
-    // QUEUED/ASSIGNED tasks go to annotators (ANNOTATION stage)
-    // IN_REVIEW tasks go to reviewers (REVIEW stage)
-    const workflowStage = task.status === TaskStatus.IN_REVIEW 
+    const workflowStage = task.status === TaskStatus.SUBMITTED 
       ? WorkflowStage.REVIEW 
       : WorkflowStage.ANNOTATION;
 
@@ -451,19 +502,135 @@ export class BatchService {
 
     if (eligibleUsers.length === 0) {
       this.logger.warn(`No eligible users found for project ${project.id} at stage ${workflowStage}`);
-      return null;
+      return [];
     }
+
+    // Ensure we don't try to assign more users than available
+    const actualCount = Math.min(count, eligibleUsers.length);
 
     switch (method) {
       case 'AUTO_ROUND_ROBIN':
-        return this.roundRobinSelection(eligibleUsers, task);
+        return this.roundRobinMultiSelection(eligibleUsers, task, actualCount, pendingAssignments);
       case 'AUTO_SKILL_BASED':
-        return this.skillBasedSelection(eligibleUsers, task);
+        return this.skillBasedMultiSelection(eligibleUsers, task, actualCount, pendingAssignments);
       case 'AUTO_WORKLOAD_BASED':
-        return this.workloadBasedSelection(eligibleUsers, task);
+        return this.workloadBasedMultiSelection(eligibleUsers, task, actualCount, pendingAssignments);
       default:
-        return this.roundRobinSelection(eligibleUsers, task);
+        return this.roundRobinMultiSelection(eligibleUsers, task, actualCount, pendingAssignments);
     }
+  }
+
+  /**
+   * Select multiple users using round-robin strategy
+   * CRITICAL: Counts assignments PER PROJECT, not globally
+   * CRITICAL: Includes pending assignments to prevent assigning all tasks to same user
+   */
+  private async roundRobinMultiSelection(
+    users: User[], 
+    task: Task, 
+    count: number,
+    pendingAssignments?: Map<string, number>
+  ): Promise<string[]> {
+    // Get assignment counts for each user IN THIS PROJECT ONLY
+    const assignmentCounts = await this.assignmentRepository
+      .createQueryBuilder('assignment')
+      .innerJoin('assignment.task', 'task')
+      .select('assignment.userId', 'userId')
+      .addSelect('COUNT(assignment.id)', 'count')
+      .where('assignment.status IN (:...statuses)', {
+        statuses: [AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS],
+      })
+      .andWhere('task.projectId = :projectId', { projectId: task.projectId })
+      .groupBy('assignment.userId')
+      .getRawMany();
+
+    const countMap = new Map(assignmentCounts.map((ac) => [ac.userId, parseInt(ac.count)]));
+
+    // Add pending assignments (in-memory) to the count
+    if (pendingAssignments) {
+      for (const [userId, pendingCount] of pendingAssignments.entries()) {
+        countMap.set(userId, (countMap.get(userId) || 0) + pendingCount);
+      }
+    }
+
+    this.logger.debug(`Round-robin for project ${task.projectId}: ${JSON.stringify(Array.from(countMap.entries()))}`);
+
+    // Sort users by current assignment count (ascending)
+    const sortedUsers = [...users].sort((a, b) => {
+      const countA = countMap.get(a.id) || 0;
+      const countB = countMap.get(b.id) || 0;
+      return countA - countB;
+    });
+
+    // Select the first N users with lowest assignment counts
+    return sortedUsers.slice(0, count).map(u => u.id);
+  }
+
+  /**
+   * Select multiple users using skill-based strategy
+   */
+  private async skillBasedMultiSelection(
+    users: User[], 
+    task: Task, 
+    count: number,
+    pendingAssignments?: Map<string, number>
+  ): Promise<string[]> {
+    // For now, fallback to round-robin
+    this.logger.debug('Skill-based multi-selection not implemented, using round-robin');
+    return this.roundRobinMultiSelection(users, task, count, pendingAssignments);
+  }
+
+  /**
+   * Select multiple users using workload-based strategy
+   * CRITICAL: Calculates workload PER PROJECT, not globally
+   * CRITICAL: Includes pending assignments to prevent assigning all tasks to same user
+   */
+  private async workloadBasedMultiSelection(
+    users: User[], 
+    task: Task, 
+    count: number,
+    pendingAssignments?: Map<string, number>
+  ): Promise<string[]> {
+    // Calculate current workload for each user IN THIS PROJECT ONLY
+    const workloads = await this.assignmentRepository
+      .createQueryBuilder('assignment')
+      .innerJoin('assignment.task', 'task')
+      .select('assignment.userId', 'userId')
+      .addSelect('SUM(EXTRACT(EPOCH FROM (assignment.expiresAt - assignment.assignedAt)))', 'totalTimeSeconds')
+      .where('assignment.status IN (:...statuses)', {
+        statuses: [AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS],
+      })
+      .andWhere('task.projectId = :projectId', { projectId: task.projectId })
+      .groupBy('assignment.userId')
+      .getRawMany();
+
+    const workloadMap = new Map(
+      workloads.map((w) => [w.userId, parseFloat(w.totalTimeSeconds) || 0])
+    );
+
+    // Add pending assignments (estimated 1 hour each)
+    if (pendingAssignments) {
+      for (const [userId, pendingCount] of pendingAssignments.entries()) {
+        const estimatedTime = pendingCount * 3600; // 1 hour per task
+        workloadMap.set(userId, (workloadMap.get(userId) || 0) + estimatedTime);
+      }
+    }
+
+    // Sort users by workload (ascending)
+    const sortedUsers = [...users].sort((a, b) => {
+      const workloadA = workloadMap.get(a.id) || 0;
+      const workloadB = workloadMap.get(b.id) || 0;
+      return workloadA - workloadB;
+    });
+
+    // Select users with lowest workload
+    return sortedUsers.slice(0, count).map(u => u.id);
+  }
+
+  // Keep old single-user methods for backward compatibility
+  private async selectUserForAssignment(task: Task, method: string): Promise<string | null> {
+    const users = await this.selectUsersForAssignment(task, method, 1);
+    return users[0] || null;
   }
 
   private async getEligibleUsers(projectId: string, workflowStage: WorkflowStage): Promise<User[]> {
@@ -490,14 +657,16 @@ export class BatchService {
   }
 
   private async roundRobinSelection(users: User[], task: Task): Promise<string> {
-    // Get assignment counts for each user
+    // Get assignment counts for each user IN THIS PROJECT ONLY
     const assignmentCounts = await this.assignmentRepository
       .createQueryBuilder('assignment')
+      .innerJoin('assignment.task', 'task')
       .select('assignment.userId', 'userId')
       .addSelect('COUNT(assignment.id)', 'count')
       .where('assignment.status IN (:...statuses)', {
         statuses: [AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS],
       })
+      .andWhere('task.projectId = :projectId', { projectId: task.projectId })
       .groupBy('assignment.userId')
       .getRawMany();
 
@@ -526,14 +695,16 @@ export class BatchService {
   }
 
   private async workloadBasedSelection(users: User[], task: Task): Promise<string> {
-    // Calculate current workload for each user
+    // Calculate current workload for each user IN THIS PROJECT ONLY
     const workloads = await this.assignmentRepository
       .createQueryBuilder('assignment')
+      .innerJoin('assignment.task', 'task')
       .select('assignment.userId', 'userId')
       .addSelect('COUNT(assignment.id)', 'activeCount')
       .where('assignment.status IN (:...statuses)', {
         statuses: [AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS],
       })
+      .andWhere('task.projectId = :projectId', { projectId: task.projectId })
       .groupBy('assignment.userId')
       .getRawMany();
 
@@ -632,6 +803,26 @@ export class BatchService {
     task.status = TaskStatus.ASSIGNED;
     task.assignmentId = savedAssignment.id;
     task.assignedAt = new Date();
+
+    // Initialize machine state with currentStage if not already set
+    const workflowStages = (task.project?.configuration?.workflowConfiguration as any)?.stages;
+    if (workflowStages && workflowStages.length > 0) {
+      const currentStage =  task.machineState?.context?.currentStage;
+      if (!currentStage) {
+        // Set to first workflow stage
+        task.machineState = {
+          ...task.machineState,
+          value: 'assigned',
+          context: {
+            ...task.machineState?.context,
+            currentStage: workflowStages[0].id,
+            stageTransitionedAt: new Date().toISOString(),
+          },
+        };
+        this.logger.log(`Task ${taskId} initialized with workflow stage: ${workflowStages[0].name}`);
+      }
+    }
+
     await this.taskRepository.save(task);
 
     // Publish Kafka events

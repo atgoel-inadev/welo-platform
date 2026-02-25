@@ -56,6 +56,14 @@ export class TaskController {
     return this.taskService.getTask(id);
   }
 
+  @Get(':id/assignments')
+  @ApiOperation({ summary: 'Get all assignments for a task' })
+  @ApiResponse({ status: 200, description: 'Assignments retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Task not found' })
+  async getTaskAssignments(@Param('id') taskId: string) {
+    return this.taskService.getTaskAssignments(taskId);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create a new task' })
   @ApiResponse({ status: 201, description: 'Task created successfully' })

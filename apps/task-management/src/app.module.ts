@@ -5,6 +5,7 @@ import { TaskController } from './task/task.controller';
 import { TaskService } from './task/task.service';
 import { TaskRenderingService } from './services/task-rendering.service';
 import { StageAssignmentService } from './services/stage-assignment.service';
+import { WorkflowProgressionService } from './services/workflow-progression.service';
 import { PluginRunnerService } from './services/plugin-runner.service';
 import { CommentService } from './services/comment.service';
 import { BatchController } from './batch/batch.controller';
@@ -86,6 +87,7 @@ import {
       AnnotationResponse,
       ReviewApproval,
       Project,
+      ProjectTeamMember,
       Batch,
       Workflow,
       User,
@@ -97,6 +99,13 @@ import {
     KafkaModule,
   ],
   controllers: [TaskController, BatchController, HealthController],
-  providers: [TaskService, TaskRenderingService, StageAssignmentService, PluginRunnerService, CommentService],
+  providers: [
+    TaskService, 
+    TaskRenderingService, 
+    StageAssignmentService, 
+    WorkflowProgressionService,
+    PluginRunnerService, 
+    CommentService
+  ],
 })
 export class AppModule {}
