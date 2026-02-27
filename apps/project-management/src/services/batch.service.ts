@@ -418,6 +418,8 @@ export class BatchService {
   async autoAssignTasks(tasks: Task[], method: string): Promise<void> {
     const assignmentMethod = method as 'AUTO_ROUND_ROBIN' | 'AUTO_SKILL_BASED' | 'AUTO_WORKLOAD_BASED';
 
+    this.logger.log(`[AUTO-ASSIGN] Starting batch assignment for ${tasks.length} tasks using method: ${method}`);
+
     // CRITICAL: Track assignments in memory to ensure proper round-robin distribution
     // Without this, all tasks get assigned to the same user because DB isn't updated yet
     const pendingAssignments = new Map<string, number>(); // userId -> count
@@ -444,7 +446,8 @@ export class BatchService {
         // Determine how many assignments to create
         const assignmentsRequired = currentStage?.annotators_count || 1;
 
-        this.logger.log(`Task ${task.id}: Creating ${assignmentsRequired} assignments for stage ${currentStage?.name}`);
+        this.logger.log(`[AUTO-ASSIGN] Task ${task.id}: Need ${assignmentsRequired} assignments for stage ${currentStage?.name}`);
+        this.logger.debug(`[AUTO-ASSIGN] Pending assignments before selection: ${JSON.stringify(Array.from(pendingAssignments.entries()))}`);
 
         // Create multiple assignments for the task, passing pending assignments map
         const selectedUserIds = await this.selectUsersForAssignment(
@@ -453,6 +456,8 @@ export class BatchService {
           assignmentsRequired,
           pendingAssignments
         );
+
+        this.logger.log(`[AUTO-ASSIGN] Selected users for task ${task.id}: ${JSON.stringify(selectedUserIds)}`);
 
         if (selectedUserIds.length === 0) {
           this.logger.warn(`No users selected for task ${task.id}`);
@@ -484,6 +489,9 @@ export class BatchService {
     count: number,
     pendingAssignments?: Map<string, number>
   ): Promise<string[]> {
+    this.logger.log(`[SELECTION] Task ${task.id}: Selecting ${count} users using ${method}`);
+    this.logger.debug(`[SELECTION] Pending assignments: ${JSON.stringify(Array.from(pendingAssignments?.entries() || []))}`);
+
     const project = await this.projectRepository.findOne({
       where: { id: task.projectId },
     });
@@ -497,6 +505,8 @@ export class BatchService {
       ? WorkflowStage.REVIEW 
       : WorkflowStage.ANNOTATION;
 
+    this.logger.debug(`[SELECTION] Task status: ${task.status}, Workflow stage: ${workflowStage}`);
+
     // Get eligible users (project team members with appropriate role)
     const eligibleUsers = await this.getEligibleUsers(project.id, workflowStage);
 
@@ -504,6 +514,8 @@ export class BatchService {
       this.logger.warn(`No eligible users found for project ${project.id} at stage ${workflowStage}`);
       return [];
     }
+
+    this.logger.log(`[SELECTION] Found ${eligibleUsers.length} eligible users, need ${count}, will select ${Math.min(count, eligibleUsers.length)}`);
 
     // Ensure we don't try to assign more users than available
     const actualCount = Math.min(count, eligibleUsers.length);
@@ -553,7 +565,7 @@ export class BatchService {
       }
     }
 
-    this.logger.debug(`Round-robin for project ${task.projectId}: ${JSON.stringify(Array.from(countMap.entries()))}`);
+    this.logger.log(`[ROUND-ROBIN] Project ${task.projectId}: Assignment counts: ${JSON.stringify(Array.from(countMap.entries()))}`);
 
     // Sort users by current assignment count (ascending)
     const sortedUsers = [...users].sort((a, b) => {
@@ -562,8 +574,12 @@ export class BatchService {
       return countA - countB;
     });
 
+    this.logger.debug(`[ROUND-ROBIN] Sorted users: ${JSON.stringify(sortedUsers.map(u => ({ id: u.id, count: countMap.get(u.id) || 0 })))}`);
+
     // Select the first N users with lowest assignment counts
-    return sortedUsers.slice(0, count).map(u => u.id);
+    const selected = sortedUsers.slice(0, count).map(u => u.id);
+    this.logger.log(`[ROUND-ROBIN] Selected users: ${JSON.stringify(selected)}`);
+    return selected;
   }
 
   /**
@@ -637,6 +653,8 @@ export class BatchService {
     // Determine required role based on workflow stage
     const requiredRole = workflowStage === WorkflowStage.REVIEW ? 'REVIEWER' : 'ANNOTATOR';
 
+    this.logger.log(`[ELIGIBILITY] Looking for ${requiredRole}s in project ${projectId} for stage ${workflowStage}`);
+
     // Query project team members with the appropriate role
     const teamMembers = await this.teamMemberRepository.find({
       where: {
@@ -647,12 +665,14 @@ export class BatchService {
       relations: ['user'],
     });
 
+    this.logger.debug(`[ELIGIBILITY] Found ${teamMembers.length} team members with role ${requiredRole}`);
+
     // Filter to only active users and extract user entities
     const eligibleUsers = teamMembers
       .filter(member => member.user && member.user.status === UserStatus.ACTIVE)
       .map(member => member.user);
 
-    this.logger.debug(`Found ${eligibleUsers.length} eligible ${requiredRole}s for project ${projectId}`);
+    this.logger.log(`[ELIGIBILITY] ${eligibleUsers.length} eligible ${requiredRole}s for project ${projectId}: ${JSON.stringify(eligibleUsers.map(u => ({ id: u.id, email: u.email })))}`);
     return eligibleUsers;
   }
 

@@ -306,10 +306,10 @@ export class TaskService {
       
       // Separate by stage type
       const annotationAssignments = allAssignments.filter(a => 
-        a.workflowStage?.includes('annotation') || a.workflowStage === 'annotation'
+        a.workflowStage === WorkflowStage.ANNOTATION
       );
       const reviewAssignments = allAssignments.filter(a => 
-        a.workflowStage?.includes('review') || a.workflowStage === 'review'
+        a.workflowStage === WorkflowStage.REVIEW
       );
 
       // Calculate completion counts
