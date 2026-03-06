@@ -1,12 +1,18 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { DataSource, Repository, In } from 'typeorm';
 import { Batch, Task, Project, Assignment, User, Workflow, ProjectTeamMember } from '@app/common/entities';
 import { BatchStatus, TaskStatus, TaskType, AssignmentStatus, AssignmentMethod, WorkflowStage, UserStatus, WorkflowStatus } from '@app/common/enums';
-import { KafkaService } from '../kafka/kafka.service';
+import { KafkaService } from '@app/infrastructure';
+import { RedisService } from '@app/infrastructure';
 import { CreateBatchDto, UpdateBatchDto, AllocateFilesDto, AllocateFolderDto, ScanDirectoryDto, AssignTaskDto, PullNextTaskDto } from '../dto/batch.dto';
 import * as fs from 'fs';
 import * as path from 'path';
+
+/** Score formula: lower score = dequeued first (ZPOPMIN). */
+function taskQueueScore(priority: number, createdAt: Date): number {
+  return (10 - priority) * 1e10 + Math.floor(createdAt.getTime() / 1000);
+}
 
 @Injectable()
 export class BatchService {
@@ -27,7 +33,9 @@ export class BatchService {
     private workflowRepository: Repository<Workflow>,
     @InjectRepository(ProjectTeamMember)
     private teamMemberRepository: Repository<ProjectTeamMember>,
+    private dataSource: DataSource,
     private kafkaService: KafkaService,
+    private redis: RedisService,
   ) {}
 
   /**
@@ -867,78 +875,110 @@ export class BatchService {
   }
 
   async pullNextTask(dto: PullNextTaskDto): Promise<Task | null> {
-    // Find next available task for the user
-    const query = this.taskRepository
-      .createQueryBuilder('task')
-      .leftJoin('task.project', 'project')
-      .where('task.status = :status', { status: TaskStatus.QUEUED })
-      .andWhere('task.projectId IN (SELECT project_id FROM project_members WHERE user_id = :userId)', {
-        userId: dto.userId,
-      })
-      .orderBy('task.priority', 'DESC')
-      .addOrderBy('task.createdAt', 'ASC');
+    // ── Phase 1: try Redis queue (atomic ZPOPMIN) ─────────────────────────────
+    if (dto.projectId) {
+      const queueKey = dto.taskType
+        ? `task_queue:${dto.projectId}:${dto.taskType}`
+        : `task_queue:${dto.projectId}:ALL`;
+      const taskId = await this.redis.zpopmin(queueKey);
 
-    if (dto.taskType) {
-      query.andWhere('task.taskType = :taskType', { taskType: dto.taskType });
+      if (taskId) {
+        // Also remove from the other queue to keep them in sync
+        if (!dto.taskType) {
+          // popped from ALL — task type not known here, skip cross-remove
+        }
+        const lockKey = `assignment_lock:${taskId}`;
+        const locked = await this.redis.setNx(lockKey, dto.userId, 30_000);
+        if (locked) {
+          try {
+            await this.assignTaskToUser(taskId, dto.userId, AssignmentMethod.CLAIMED);
+            return this.taskRepository.findOne({ where: { id: taskId }, relations: ['batch', 'project'] });
+          } catch (err) {
+            this.logger.warn(`Failed to assign task ${taskId} after Redis dequeue: ${err.message}`);
+          } finally {
+            await this.redis.del(lockKey);
+          }
+        }
+      }
     }
 
-    const task = await query.getOne();
+    // ── Phase 2: DB fallback with SELECT FOR UPDATE SKIP LOCKED ──────────────
+    return this.dataSource.transaction(async (em) => {
+      const conditions: string[] = [
+        't.status = $1',
+        `t.project_id IN (
+           SELECT ptm.project_id FROM project_team_members ptm WHERE ptm.user_id = $2
+         )`,
+      ];
+      const params: any[] = [TaskStatus.QUEUED, dto.userId];
 
-    if (!task) {
-      this.logger.debug(`No available tasks for user ${dto.userId}`);
-      return null;
-    }
+      if (dto.taskType) {
+        params.push(dto.taskType);
+        conditions.push(`t.task_type = $${params.length}`);
+      }
 
-    // Auto-assign the task to the user
-    await this.assignTaskToUser(task.id, dto.userId, AssignmentMethod.MANUAL);
+      const where = conditions.join(' AND ');
+      const rows: { id: string }[] = await em.query(
+        `SELECT t.id FROM tasks t WHERE ${where}
+         ORDER BY t.priority DESC, t.created_at ASC
+         LIMIT 1
+         FOR UPDATE SKIP LOCKED`,
+        params,
+      );
 
-    return this.taskRepository.findOne({
-      where: { id: task.id },
-      relations: ['batch', 'project'],
+      if (!rows.length) {
+        this.logger.debug(`No available tasks for user ${dto.userId}`);
+        return null;
+      }
+
+      const taskId = rows[0].id;
+      await this.assignTaskToUser(taskId, dto.userId, AssignmentMethod.CLAIMED);
+      return this.taskRepository.findOne({ where: { id: taskId }, relations: ['batch', 'project'] });
     });
   }
 
   async getBatchStatistics(batchId: string): Promise<any> {
-    const batch = await this.batchRepository.findOne({
-      where: { id: batchId },
-    });
+    const batch = await this.batchRepository.findOne({ where: { id: batchId } });
+    if (!batch) throw new NotFoundException(`Batch with ID ${batchId} not found`);
 
-    if (!batch) {
-      throw new NotFoundException(`Batch with ID ${batchId} not found`);
+    // Single aggregate query — no full table load into application memory
+    const [statusRows, assignmentRows, durationRow]: [
+      { status: string; count: string }[],
+      { assignment_method: string; count: string }[],
+      { avg_duration: string | null; unassigned_count: string }[],
+    ] = await Promise.all([
+      this.dataSource.query(
+        `SELECT status, COUNT(*) AS count FROM tasks WHERE batch_id = $1 GROUP BY status`,
+        [batchId],
+      ),
+      this.dataSource.query(
+        `SELECT a.assignment_method, COUNT(*) AS count
+         FROM assignments a
+         INNER JOIN tasks t ON t.id = a.task_id
+         WHERE t.batch_id = $1
+         GROUP BY a.assignment_method`,
+        [batchId],
+      ),
+      this.dataSource.query(
+        `SELECT
+           AVG(NULLIF(t.actual_duration, 0)) AS avg_duration,
+           COUNT(*) FILTER (WHERE NOT EXISTS (
+             SELECT 1 FROM assignments a WHERE a.task_id = t.id
+           )) AS unassigned_count
+         FROM tasks t
+         WHERE t.batch_id = $1`,
+        [batchId],
+      ),
+    ]);
+
+    const statusCounts = Object.fromEntries(statusRows.map((r) => [r.status, parseInt(r.count, 10)]));
+
+    const assignmentBreakdown = { manual: 0, autoAssigned: 0, unassigned: 0 };
+    for (const r of assignmentRows) {
+      if (r.assignment_method === AssignmentMethod.MANUAL) assignmentBreakdown.manual += parseInt(r.count, 10);
+      else assignmentBreakdown.autoAssigned += parseInt(r.count, 10);
     }
-
-    const tasks = await this.taskRepository.find({
-      where: { batchId: batch.id },
-    });
-
-    const statusCounts = tasks.reduce((acc, task) => {
-      acc[task.status] = (acc[task.status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const assignments = await this.assignmentRepository.find({
-      where: {
-        taskId: In(tasks.map((t) => t.id)),
-      },
-    });
-
-    const assignmentBreakdown = assignments.reduce(
-      (acc, assignment) => {
-        if (assignment.assignmentMethod === AssignmentMethod.MANUAL) {
-          acc.manual++;
-        } else {
-          acc.autoAssigned++;
-        }
-        return acc;
-      },
-      { manual: 0, autoAssigned: 0, unassigned: tasks.length - assignments.length },
-    );
-
-    const completedTasks = tasks.filter((t) => t.status === TaskStatus.APPROVED);
-    const averageTaskDuration =
-      completedTasks.length > 0
-        ? completedTasks.reduce((sum, t) => sum + (t.actualDuration || 0), 0) / completedTasks.length
-        : 0;
+    assignmentBreakdown.unassigned = parseInt(durationRow[0]?.unassigned_count ?? '0', 10);
 
     return {
       batchId: batch.id,
@@ -948,7 +988,7 @@ export class BatchService {
       queuedTasks: statusCounts[TaskStatus.QUEUED] || 0,
       failedTasks: statusCounts[TaskStatus.REJECTED] || 0,
       completionPercentage: batch.totalTasks > 0 ? (batch.completedTasks / batch.totalTasks) * 100 : 0,
-      averageTaskDuration,
+      averageTaskDuration: parseFloat(durationRow[0]?.avg_duration ?? '0') || 0,
       qualityScore: batch.qualityScore || 0,
       assignmentBreakdown,
     };

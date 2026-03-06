@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, FindOptionsWhere } from 'typeorm';
 import { Task, Assignment, Annotation, Project, Batch, Workflow, User, Queue, AnnotationResponse } from '@app/common/entities';
 import { TaskStatus, TaskType, AssignmentStatus, AssignmentMethod, WorkflowStage } from '@app/common/enums';
-import { KafkaService } from '../kafka/kafka.service';
+import { KafkaService } from '@app/infrastructure';
 import { TaskRenderingService } from '../services/task-rendering.service';
 import {
   CreateTaskDto,
@@ -43,9 +43,7 @@ export class TaskService {
     private queueRepository: Repository<Queue>,
     private kafkaService: KafkaService,
     private taskRenderingService: TaskRenderingService,
-  ) {
-    // Note: WorkflowProgressionService will be lazily imported in submitTask to avoid circular dependency
-  }
+  ) {}
 
   async createTask(dto: CreateTaskDto): Promise<Task> {
     // Validate references
@@ -158,85 +156,21 @@ export class TaskService {
     return task;
   }
 
-  /**
-   * Get all assignments for a task with user information
-   * Shows completion status for each assignment
-   */
-  async getTaskAssignments(taskId: string): Promise<any> {
-    const task = await this.taskRepository.findOne({
-      where: { id: taskId },
-      relations: ['project'],
-    });
-
+  async getTaskAssignments(taskId: string): Promise<Assignment[]> {
+    // Verify task exists
+    const task = await this.taskRepository.findOne({ where: { id: taskId } });
     if (!task) {
       throw new NotFoundException(`Task with ID ${taskId} not found`);
     }
 
+    // Fetch assignments with user relations
     const assignments = await this.assignmentRepository.find({
       where: { taskId },
       relations: ['user'],
-      order: { assignmentOrder: 'ASC', createdAt: 'ASC' },
+      order: { createdAt: 'DESC' },
     });
 
-    // Transform to include user details and progress information
-    const transformedAssignments = assignments.map(assignment => ({
-      id: assignment.id,
-      workflowStage: assignment.workflowStage,
-      status: assignment.status,
-      assignmentOrder: assignment.assignmentOrder,
-      isPrimary: assignment.isPrimary,
-      assignmentMethod: assignment.assignmentMethod,
-      assignedAt: assignment.assignedAt,
-      acceptedAt: assignment.acceptedAt,
-      completedAt: assignment.completedAt,
-      expiresAt: assignment.expiresAt,
-      user: {
-        id: assignment.user?.id,
-        email: assignment.user?.email,
-        firstName: assignment.user?.firstName,
-        lastName: assignment.user?.lastName,
-        role: assignment.user?.role,
-      },
-    }));
-
-    // Get project workflow config to determine requirements
-    const project = task.project;
-    const workflowStages = (project?.configuration?.workflowConfiguration as any)?.stages || [];
-    const currentStageId = task.machineState?.context?.currentStage;
-    const currentStage = workflowStages.find((s: any) => s.id === currentStageId) || workflowStages[0];
-
-    // Calculate progress
-    const annotationAssignments = assignments.filter(a => a.workflowStage === 'ANNOTATION');
-    const reviewAssignments = assignments.filter(a => a.workflowStage === 'REVIEW');
-    
-    const requiredAnnotators = currentStage?.type === 'annotation' ? currentStage.annotators_count : 0;
-    const requiredReviewers = currentStage?.type === 'review' ? currentStage.reviewers_count : 0;
-
-    const completedAnnotators = annotationAssignments.filter(a => a.status === 'COMPLETED').length;
-    const completedReviewers = reviewAssignments.filter(a => a.status === 'COMPLETED').length;
-
-    return {
-      taskId: task.id,
-      taskStatus: task.status,
-      currentStage: {
-        id: currentStageId,
-        name: currentStage?.name,
-        type: currentStage?.type,
-      },
-      progress: {
-        annotation: {
-          completed: completedAnnotators,
-          required: requiredAnnotators,
-          total: annotationAssignments.length,
-        },
-        review: {
-          completed: completedReviewers,
-          required: requiredReviewers,
-          total: reviewAssignments.length,
-        },
-      },
-      assignments: transformedAssignments,
-    };
+    return assignments;
   }
 
   /**
@@ -301,58 +235,16 @@ export class TaskService {
 
     // Transform tasks to add computed fields for frontend
     const tasks = rawTasks.map(task => {
-      // Calculate multi-annotator assignment progress
-      const allAssignments = task.assignments || [];
-      
-      // Separate by stage type
-      const annotationAssignments = allAssignments.filter(a => 
-        a.workflowStage === WorkflowStage.ANNOTATION
-      );
-      const reviewAssignments = allAssignments.filter(a => 
-        a.workflowStage === WorkflowStage.REVIEW
-      );
-
-      // Calculate completion counts
-      const annotationCompleted = annotationAssignments.filter(
-        a => a.status === AssignmentStatus.COMPLETED
-      ).length;
-      const annotationInProgress = annotationAssignments.filter(
-        a => a.status === AssignmentStatus.IN_PROGRESS
-      ).length;
-      const reviewCompleted = reviewAssignments.filter(
-        a => a.status === AssignmentStatus.COMPLETED
-      ).length;
-      const reviewInProgress = reviewAssignments.filter(
-        a => a.status === AssignmentStatus.IN_PROGRESS
-      ).length;
-
-      // Find any active assignment for backward compatibility
-      const activeAssignment = allAssignments.find(
+      // Find the active assignment (ASSIGNED or IN_PROGRESS)
+      const activeAssignment = task.assignments?.find(
         a => a.status === AssignmentStatus.ASSIGNED || a.status === AssignmentStatus.IN_PROGRESS
       );
 
       return {
         ...task,
-        // Backward compatibility fields
         assignedTo: activeAssignment?.userId || null,
         workflowStage: activeAssignment?.workflowStage || null,
         fileName: task.fileMetadata?.fileName || task.externalId || 'Unknown',
-        
-        // Multi-annotator progress metadata
-        assignmentProgress: {
-          annotation: {
-            total: annotationAssignments.length,
-            completed: annotationCompleted,
-            inProgress: annotationInProgress,
-            assigned: annotationAssignments.filter(a => a.status === AssignmentStatus.ASSIGNED).length,
-          },
-          review: {
-            total: reviewAssignments.length,
-            completed: reviewCompleted,
-            inProgress: reviewInProgress,
-            assigned: reviewAssignments.filter(a => a.status === AssignmentStatus.ASSIGNED).length,
-          },
-        },
       };
     });
 
@@ -610,12 +502,6 @@ export class TaskService {
 
     const updatedTask = await this.taskRepository.save(task);
 
-    this.logger.log(
-      `[Task Submitted] TaskId: ${dto.taskId} | AssignmentId: ${dto.assignmentId} | ` +
-      `Status: ${updatedTask.status} | Completed: ${updatedTask.completedAssignments}/${updatedTask.totalAssignmentsRequired} | ` +
-      `Consensus: ${updatedTask.requiresConsensus ? `required (${updatedTask.consensusScore}%)` : 'not required'}`
-    );
-
     // Publish Kafka events
     await this.kafkaService.publishTaskEvent('submitted', updatedTask);
     await this.kafkaService.publishAnnotationEvent(savedAnnotation);
@@ -623,38 +509,8 @@ export class TaskService {
     // Request quality check
     await this.kafkaService.publishQualityCheckRequest(updatedTask);
 
-    // CRITICAL: Progress workflow to next stage after submission
-    // Trigger async workflow progression (don't block task submission)
-    this.logger.log(`[Workflow Trigger] Starting workflow progression for task ${dto.taskId}`);
-    this.progressWorkflowAfterSubmission(dto.taskId).catch(error => {
-      this.logger.error(`[Workflow Error] Workflow progression failed for task ${dto.taskId}: ${error.message}`, error.stack);
-    });
-
     this.logger.log(`Task ${dto.taskId} submitted by assignment ${dto.assignmentId}`);
     return updatedTask;
-  }
-
-  /**
-   * Progress workflow to next stage after task submission
-   * Runs asynchronously to avoid blocking task submission
-   */
-  private async progressWorkflowAfterSubmission(taskId: string): Promise<void> {
-    try {
-      const { WorkflowProgressionService } = await import('../services/workflow-progression.service');
-      
-      const progressionService = new WorkflowProgressionService(
-        this.taskRepository,
-        this.projectRepository,
-        this.assignmentRepository,
-        this.taskRepository.manager.connection.getRepository('ProjectTeamMember'),
-      );
-      
-      await progressionService.progressToNextStage(taskId);
-      this.logger.log(`Task ${taskId} workflow progression completed`);
-    } catch (error) {
-      this.logger.error(`Failed to progress workflow for task ${taskId}: ${error.message}`, error.stack);
-      throw error;
-    }
   }
 
   async updateTaskStatus(taskId: string, dto: UpdateTaskStatusDto): Promise<Task> {
@@ -710,7 +566,12 @@ export class TaskService {
     return updatedTask;
   }
 
-  async sendEvent(taskId: string, dto: TaskTransitionDto): Promise<Task> {
+  /**
+   * @internal DEPRECATED for external use. Direct machineState mutation for
+   * simple context sync only. External callers must use:
+   *   workflow-engine POST /tasks/:taskId/events (port 3001)
+   */
+  private async sendEvent(taskId: string, dto: TaskTransitionDto): Promise<Task> {
     // CRITICAL: Fetch WITHOUT relations to prevent cascade save issues
     const task = await this.getTaskForUpdate(taskId);
 
@@ -909,12 +770,18 @@ export class TaskService {
       dto.timeSpent,
     );
 
-    // CRITICAL: Progress workflow to next stage after annotation submission
-    this.logger.log(`[Workflow Trigger] Starting workflow progression for task ${taskId}`);
-    this.progressWorkflowAfterSubmission(taskId).catch(error => {
-      this.logger.error(`[Workflow Error] Workflow progression failed for task ${taskId}: ${error.message}`, error.stack);
+    // CRITICAL: Publish annotation.submitted event for Workflow Engine
+    // This triggers state transition processing in workflow-engine service
+    await this.kafkaService.publishAnnotationEvent({
+      id: result.annotationId,
+      taskId,
+      userId,
+      version: result.version,
+      responsesCount: result.responsesCount,
     });
 
+    this.logger.log(`[Annotation Submitted] Task ${taskId} by user ${userId} — annotation.submitted event published`);
+    
     return result;
   }
 

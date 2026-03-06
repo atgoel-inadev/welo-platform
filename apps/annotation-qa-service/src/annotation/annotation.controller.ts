@@ -1,28 +1,20 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query,
+  Controller, Get, Patch, Body, Param, Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AnnotationService } from './annotation.service';
-import { SubmitAnnotationDto, UpdateAnnotationDto, CompareAnnotationsDto } from './dto/annotation.dto';
+import { UpdateAnnotationDto, CompareAnnotationsDto } from './dto/annotation.dto';
 
+/**
+ * Annotation read/update endpoints.
+ * Annotation submission is owned by task-management (POST /tasks/:id/submit).
+ * This service reacts to annotation.submitted Kafka events via AnnotationEventHandler.
+ */
 @ApiTags('annotations')
 @ApiBearerAuth()
 @Controller()
 export class AnnotationController {
   constructor(private readonly annotationService: AnnotationService) {}
-
-  @Post('tasks/:taskId/annotations')
-  @ApiOperation({ summary: 'Submit annotation for a task (triggers auto QC if not draft)' })
-  @ApiResponse({ status: 201, description: 'Annotation submitted, QC pipeline initiated' })
-  @ApiResponse({ status: 404, description: 'Task or assignment not found' })
-  @ApiQuery({ name: 'userId', required: true, description: 'ID of the annotating user' })
-  async submit(
-    @Param('taskId') taskId: string,
-    @Query('userId') userId: string,
-    @Body() dto: SubmitAnnotationDto,
-  ) {
-    return this.annotationService.submit(taskId, userId, dto);
-  }
 
   @Get('tasks/:taskId/annotations')
   @ApiOperation({ summary: 'List all annotations for a task' })

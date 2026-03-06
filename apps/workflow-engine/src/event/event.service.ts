@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { StateTransition, TransitionType } from '@app/common';
 import { WorkflowService } from '../workflow/workflow.service';
-import { RedisService } from '../redis/redis.service';
+import { RedisService } from '@app/infrastructure';
 import { createActor } from 'xstate';
 import { SendEventDto, BatchSendEventDto } from './dto/event.dto';
 import { CACHE_KEYS, EventTrigger } from '@app/common';

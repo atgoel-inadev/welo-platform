@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { AuditInterceptor } from '@app/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
-import { HealthController } from './health/health.controller';
+import { HealthModule } from '@app/infrastructure';
 import {
   Workflow,
   WorkflowInstance,
@@ -66,11 +68,21 @@ import {
         autoLoadEntities: true,
         synchronize: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
+        extra: {
+          max: configService.get<number>('DB_POOL_SIZE', 10),
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 3000,
+        },
       }),
       inject: [ConfigService],
     }),
     AuthModule,
+    HealthModule.forRoot({ serviceName: 'auth-service', version: '1.0.0' }),
+    TypeOrmModule.forFeature([AuditLog]),
   ],
-  controllers: [HealthController],
+  controllers: [],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
+  ],
 })
 export class AppModule {}

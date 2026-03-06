@@ -157,6 +157,7 @@ export enum ExportStatus {
   PROCESSING = 'PROCESSING',
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
 }
 
 // Audit Action
@@ -170,6 +171,7 @@ export enum AuditAction {
   APPROVE = 'APPROVE',
   REJECT = 'REJECT',
   EXPORT = 'EXPORT',
+  ACCESS = 'ACCESS',   // user login / session events
 }
 
 // Notification Type
@@ -179,6 +181,9 @@ export enum NotificationType {
   FEEDBACK_RECEIVED = 'FEEDBACK_RECEIVED',
   BATCH_COMPLETED = 'BATCH_COMPLETED',
   SYSTEM_ALERT = 'SYSTEM_ALERT',
+  EXPORT_READY = 'EXPORT_READY',
+  QUALITY_ISSUE = 'QUALITY_ISSUE',
+  ASSIGNMENT_EXPIRED = 'ASSIGNMENT_EXPIRED',
 }
 
 // Priority

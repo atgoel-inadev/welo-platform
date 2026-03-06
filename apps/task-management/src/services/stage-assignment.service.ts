@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Task, Assignment, Project, User } from '@app/common/entities';
 import { AssignmentStatus, AssignmentMethod, WorkflowStage } from '@app/common/enums';
 
@@ -29,6 +29,7 @@ export class StageAssignmentService {
     private projectRepository: Repository<Project>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private dataSource: DataSource,
   ) {}
 
   /**
@@ -157,61 +158,50 @@ export class StageAssignmentService {
     stageId: string,
   ): Promise<Task | null> {
     const project = await this.projectRepository.findOne({ where: { id: projectId } });
-    if (!project) {
-      throw new NotFoundException(`Project with ID ${projectId} not found`);
-    }
+    if (!project) throw new NotFoundException(`Project with ID ${projectId} not found`);
 
     const workflowConfig: any = project.configuration?.workflowConfiguration;
     const stage = workflowConfig?.stages?.find((s: any) => s.id === stageId);
+    if (!stage) throw new NotFoundException(`Stage ${stageId} not found`);
 
-    if (!stage) {
-      throw new NotFoundException(`Stage ${stageId} not found`);
-    }
+    if (!stage.auto_assign) return null;
 
-    // Check if auto-assignment is enabled for this stage
-    if (!stage.auto_assign) {
-      return null;
-    }
+    if (stage.allowed_users?.length && !stage.allowed_users.includes(userId)) return null;
 
-    // Check if user is allowed for this stage
-    if (stage.allowed_users && stage.allowed_users.length > 0) {
-      if (!stage.allowed_users.includes(userId)) {
-        return null;
-      }
-    }
+    const maxAssignments: number = stage.type === 'annotation'
+      ? (stage.annotators_count ?? 1)
+      : (stage.reviewers_count ?? 1);
 
-    // Find tasks in this stage that need assignments
-    const tasks = await this.taskRepository
-      .createQueryBuilder('task')
-      .where('task.projectId = :projectId', { projectId })
-      .andWhere('task.machineState ->> \'context\' ->> \'currentStage\' = :stageId', { stageId })
-      .orderBy('task.priority', 'DESC')
-      .addOrderBy('task.createdAt', 'ASC')
-      .getMany();
+    // Single query: find the highest-priority task in this stage that still
+    // needs more assignments AND has not already been assigned to this user.
+    // Uses SELECT FOR UPDATE SKIP LOCKED so concurrent callers never race.
+    const rows: { id: string }[] = await this.dataSource.query(
+      `SELECT t.id
+       FROM tasks t
+       WHERE t.project_id = $1
+         AND t.machine_state -> 'context' ->> 'currentStage' = $2
+         AND (
+           SELECT COUNT(*) FROM assignments a
+           WHERE a.task_id = t.id
+             AND a.stage_id = $2
+             AND a.status NOT IN ('EXPIRED', 'REASSIGNED')
+         ) < $3
+         AND NOT EXISTS (
+           SELECT 1 FROM assignments a2
+           WHERE a2.task_id = t.id
+             AND a2.user_id = $4
+             AND a2.stage_id = $2
+             AND a2.status = 'ASSIGNED'
+         )
+       ORDER BY t.priority DESC, t.created_at ASC
+       LIMIT 1
+       FOR UPDATE SKIP LOCKED`,
+      [projectId, stageId, maxAssignments, userId],
+    );
 
-    for (const task of tasks) {
-      const currentAssignments = await this.getStageAssignmentCount(task.id, stageId, stage.type);
-      const maxAssignments = stage.type === 'annotation'
-        ? stage.annotators_count
-        : stage.reviewers_count || 1;
+    if (!rows.length) return null;
 
-      if (currentAssignments < maxAssignments) {
-        // Check if user already has assignment
-        const userAssignment = await this.assignmentRepository.findOne({
-          where: {
-            taskId: task.id,
-            userId,
-            status: AssignmentStatus.ASSIGNED,
-          },
-        });
-
-        if (!userAssignment) {
-          return task;
-        }
-      }
-    }
-
-    return null;
+    return this.taskRepository.findOne({ where: { id: rows[0].id } });
   }
 
   /**

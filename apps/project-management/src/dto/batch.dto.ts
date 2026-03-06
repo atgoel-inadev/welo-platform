@@ -161,6 +161,9 @@ export class PullNextTaskDto {
   @ApiProperty({ example: '650e8400-e29b-41d4-a716-446655440010', description: 'User requesting next task' })
   userId: string;
 
+  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440005', description: 'Project ID — enables Redis queue fast path' })
+  projectId?: string;
+
   @ApiPropertyOptional({ example: 'queue-1', description: 'Queue ID to pull from' })
   queueId?: string;
 

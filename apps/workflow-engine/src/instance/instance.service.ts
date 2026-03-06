@@ -12,7 +12,7 @@ import {
   ActorType,
 } from '@app/common';
 import { WorkflowService } from '../workflow/workflow.service';
-import { RedisService } from '../redis/redis.service';
+import { RedisService } from '@app/infrastructure';
 import { createActor } from 'xstate';
 import { CreateInstanceDto, StopInstanceDto, RestoreInstanceDto } from './dto/instance.dto';
 import { CACHE_KEYS } from '@app/common';

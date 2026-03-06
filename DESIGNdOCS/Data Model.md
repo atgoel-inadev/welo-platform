@@ -1,14 +1,125 @@
 # Welo Data Annotation Platform - Data Model
 
 ## Overview
-This document defines the core data entities for the Welo Data Annotation Platform, designed to support centralized queueing, task workflows, annotation interfaces, operational tooling, quality processes, and batch-level data export.
+This document defines the core data entities for the Welo Data Annotation Platform, reflecting the actual TypeORM entity implementations across the microservices architecture. The platform is built as a NestJS monorepo with shared entities defined in `libs/common/src/entities/`.
+
+---
+
+## Architecture
+
+The platform is a microservices monorepo with 5 services sharing a common PostgreSQL database schema:
+
+| Service | Port | Responsibilities |
+|---------|------|-----------------|
+| Workflow Engine | 3001 | XState workflow definitions, instances, events, state transitions |
+| Auth Service | 3002 | Authentication, user management (mock JSON store in dev) |
+| Task Management | 3003 | Tasks, assignments, stage-based workflow, plugin execution, comments |
+| Project Management | 3004 | Projects, batches, customers, UI configurations, plugins, secrets, media |
+| Annotation QA Service | 3005 | Annotations, reviews, quality checks, gold tasks |
+
+All shared entities extend `BaseEntity` which provides:
+```
+BaseEntity {
+  id: UUID (PK, auto-generated)
+  createdAt: Timestamp (auto-set)
+  updatedAt: Timestamp (auto-updated)
+  metadata: JSON (optional)
+}
+```
 
 ---
 
 ## Core Entities
 
 ### 1. Project
-Represents a customer annotation project with specific configuration and requirements.
+Represents a customer annotation project with full configuration including annotation questions, workflow rules, plugins, and UI settings.
+
+**Table:** `projects`
+
+```
+Project extends BaseEntity {
+  name: String (255)
+  customerId: UUID (FK -> Customer)
+  description: Text
+  projectType: Enum [TEXT, IMAGE, VIDEO, AUDIO, MULTIMODAL]
+  status: Enum [DRAFT, ACTIVE, PAUSED, COMPLETED, ARCHIVED]
+  defaultWorkflowId: UUID (FK -> Workflow, nullable)
+  configuration: JSONB {
+    annotationSchema: Object
+    qualityThresholds: Object
+    workflowRules: Object
+    uiConfiguration: Object
+    xstateServices?: Object
+    xstateGuards?: Object
+    xstateActions?: Object
+    annotationQuestions?: Array<{
+      id: String
+      question: String
+      questionType: Enum [MULTI_SELECT, TEXT, SINGLE_SELECT, NUMBER, DATE]
+      required: Boolean
+      options?: Array<{ id: String, label: String, value: String }>
+      validation?: { minLength?, maxLength?, pattern?, min?, max? }
+      dependsOn?: String   // question ID
+      showWhen?: Object    // conditional display rules
+    }>
+    workflowConfiguration?: {
+      annotatorsPerTask: Integer
+      reviewLevels: Array<{
+        level: Integer
+        name: String
+        reviewersCount: Integer
+        requireAllApprovals: Boolean
+        approvalThreshold?: Number
+        autoAssign: Boolean
+        allowedReviewers?: String[]
+      }>
+      approvalCriteria: {
+        requireAllAnnotatorConsensus: Boolean
+        consensusThreshold?: Number
+        qualityScoreMinimum?: Number
+        autoApproveIfQualityAbove?: Number
+      }
+      assignmentRules: {
+        allowSelfAssignment: Boolean
+        preventDuplicateAssignments: Boolean
+        maxConcurrentAssignments?: Integer
+        assignmentTimeout?: Integer  // minutes
+      }
+    }
+    supportedFileTypes?: Array<'CSV'|'TXT'|'IMAGE'|'VIDEO'|'AUDIO'|'PDF'>
+    plugins?: Array<{
+      id: String
+      name: String
+      description?: String
+      type: Enum [API, SCRIPT]
+      enabled: Boolean
+      trigger: Enum [ON_BLUR, ON_SUBMIT]
+      onFailBehavior: Enum [HARD_BLOCK, SOFT_WARN, ADVISORY]
+      questionBindings: String[]
+      isDraft: Boolean
+      version: Integer
+      createdAt: String
+      updatedAt: String
+      deployedAt?: String
+      apiConfig?: {
+        url: String
+        method: Enum [GET, POST, PUT, PATCH]
+        headers: Object
+        payload?: String
+        responseMapping: { resultPath: String, messagePath?: String }
+        timeout: Integer
+        retries: Integer
+      }
+      scriptCode?: String
+    }>
+  }
+  createdBy: UUID (FK -> User)
+  startDate: Date (nullable)
+  endDate: Date (nullable)
+}
+```
+
+**Indexes:** `customerId`, `status`, `createdAt`
 
 ```
 Project {
@@ -40,498 +151,744 @@ Project {
 ### 2. Customer
 Represents clients using the annotation platform.
 
+**Table:** `customers`
+
 ```
-Customer {
-  id: UUID (PK)
-  name: String
-  organization: String
-  contact_email: String
-  contact_phone: String
-  billing_info: JSON
+Customer extends BaseEntity {
+  name: String (255)
+  email: String (unique)
+  subscription: String (nullable)   // free, pro, enterprise
   status: Enum [ACTIVE, INACTIVE, SUSPENDED]
-  created_at: Timestamp
-  updated_at: Timestamp
-  metadata: JSON
 }
 ```
 
 ### 3. Batch
 Represents a collection of tasks grouped for processing and export.
 
+**Table:** `batches`
+
 ```
-Batch {
-  id: UUID (PK)
-  project_id: UUID (FK -> Project)
-  name: String
-  description: Text
+Batch extends BaseEntity {
+  projectId: UUID (FK -> Project)
+  name: String (255)
+  description: Text (nullable)
   status: Enum [CREATED, IN_PROGRESS, REVIEW, COMPLETED, EXPORTED]
-  priority: Integer (1-10)
-  total_tasks: Integer
-  completed_tasks: Integer
-  quality_score: Decimal
-  configuration: JSON {
-    assignment_rules: Object
-    validation_rules: Object
-    export_settings: Object
+  priority: Integer (default: 5, range: 1-10)
+  totalTasks: Integer (default: 0)
+  completedTasks: Integer (default: 0)
+  qualityScore: Decimal (5,2, nullable)
+  configuration: JSONB (nullable) {
+    assignmentRules: Object
+    validationRules: Object
+    exportSettings: Object
   }
-  created_at: Timestamp
-  updated_at: Timestamp
-  due_date: Timestamp
-  completed_at: Timestamp
-  metadata: JSON
+  dueDate: Timestamp (nullable)
+  completedAt: Timestamp (nullable)
 }
 ```
 
+**Indexes:** `projectId`, `status`, `priority`, `dueDate`
+
 ### 4. Task
-Individual annotation unit within a batch with XState machine instance.
+Individual annotation unit within a batch. Stores the full XState machine state and multi-level review/consensus tracking.
+
+**Table:** `tasks`
 
 ```
-Task {
-  id: UUID (PK)
-  batch_id: UUID (FK -> Batch)
-  project_id: UUID (FK -> Project)
-  workflow_id: UUID (FK -> Workflow)
-  external_id: String (unique within project)
-  task_type: Enum [ANNOTATION, REVIEW, VALIDATION, CONSENSUS]
-  status: Enum [QUEUED, ASSIGNED, IN_PROGRESS, SUBMITTED, APPROVED, REJECTED, SKIPPED]
-  priority: Integer (1-10)
-  
+Task extends BaseEntity {
+  batchId: UUID (FK -> Batch)
+  projectId: UUID (FK -> Project)
+  workflowId: UUID (FK -> Workflow)
+  externalId: String (255)
+  taskType: Enum [ANNOTATION, REVIEW, VALIDATION, CONSENSUS]
+  status: Enum [QUEUED, ASSIGNED, IN_PROGRESS, IN_REVIEW, SUBMITTED, APPROVED, REJECTED, SKIPPED]
+  priority: Integer (default: 5, range: 1-10)
+
   # XState Machine State
-  machine_state: JSON {
-    value: String | Object (current state value, supports nested/parallel)
-    context: Object (current machine context data)
-    history: Object (history state values)
+  machineState: JSONB {
+    value: String | Object          // current state (nested/parallel supported)
+    context: Object
+    history?: Object
     done: Boolean
     changed: Boolean
-    tags: Array<String>
+    tags?: String[]
   }
-  previous_state: JSON (previous machine state for rollback)
-  state_updated_at: Timestamp
-  
-  data_payload: JSON {
-    source_data: Object
+  previousState: JSONB (nullable)
+  stateUpdatedAt: Timestamp (nullable)
+
+  # Task Data
+  dataPayload: JSONB {
+    sourceData: Object
     references: Array
     context: Object
   }
-  assignment_id: UUID (FK -> Assignment)
-  attempt_count: Integer
-  created_at: Timestamp
-  updated_at: Timestamp
-  assigned_at: Timestamp
-  started_at: Timestamp
-  submitted_at: Timestamp
-  due_date: Timestamp
-  estimated_duration: Integer (seconds)
-  actual_duration: Integer (seconds)
-  metadata: JSON
+
+  # File Information
+  fileType: String (50, nullable)   // CSV, TXT, IMAGE, VIDEO, AUDIO, PDF
+  fileUrl: Text (nullable)
+  fileMetadata: JSONB (nullable) {
+    fileName?: String
+    fileSize?: Integer
+    mimeType?: String
+    dimensions?: { width: Integer, height: Integer }
+    duration?: Number               // for video/audio
+  }
+
+  # Assignment Tracking
+  assignmentId: UUID (nullable)     // current active assignment
+  attemptCount: Integer (default: 0)
+  assignedAt: Timestamp (nullable)
+  startedAt: Timestamp (nullable)
+  submittedAt: Timestamp (nullable)
+  dueDate: Timestamp (nullable)
+  estimatedDuration: Integer (seconds, nullable)
+  actualDuration: Integer (seconds, nullable)
+
+  # Consensus Tracking
+  requiresConsensus: Boolean (default: false)
+  consensusReached: Boolean (default: false)
+  consensusScore: Decimal (5,2, nullable)           // 0-100
+  totalAssignmentsRequired: Integer (default: 1)
+  completedAssignments: Integer (default: 0)
+
+  # Multi-Level Review Tracking
+  currentReviewLevel: Integer (default: 0)    // 0=annotation, 1+=review levels
+  maxReviewLevel: Integer (default: 0)
+  allReviewsApproved: Boolean (default: false)
+
+  # Denormalized Annotation Data (for fast access)
+  annotationResponses: JSONB (nullable) Array<{
+    questionId: String
+    response: any
+    timestamp: String
+    annotatorId: String
+  }>
+  extraWidgetData: JSONB (nullable)
+
+  # Denormalized Review Data
+  reviewData: JSONB (nullable) Array<{
+    reviewLevel: Integer
+    reviewerId: String
+    decision: Enum [APPROVED, REJECTED, NEEDS_REVISION]
+    qualityScore?: Number
+    comments?: String
+    extraWidgetData?: Object
+    timestamp: String
+  }>
 }
 ```
+
+**Indexes:** `batchId`, `projectId`, `workflowId`, `status`, `priority`, `assignedAt`, `dueDate`, `stateUpdatedAt`
+**Composite Indexes:** `(projectId, status, priority)`
 
 ### 5. Assignment
-Links tasks to annotators with workflow stage information.
+Links tasks to users with workflow stage and expiry tracking.
+
+**Table:** `assignments`
 
 ```
-Assignment {
-  id: UUID (PK)
-  task_id: UUID (FK -> Task)
-  user_id: UUID (FK -> User)
-  workflow_stage: Enum [ANNOTATION, REVIEW, VALIDATION, CONSENSUS]
+Assignment extends BaseEntity {
+  taskId: UUID (FK -> Task)
+  userId: UUID (FK -> User)
+  workflowStage: Enum [ANNOTATION, REVIEW, VALIDATION, CONSENSUS]
   status: Enum [ASSIGNED, ACCEPTED, IN_PROGRESS, COMPLETED, EXPIRED, REASSIGNED]
-  assigned_at: Timestamp
-  accepted_at: Timestamp
-  completed_at: Timestamp
-  expires_at: Timestamp
-  assignment_method: Enum [AUTOMATIC, MANUAL, CLAIMED]
-  metadata: JSON
+  assignedAt: Timestamp
+  acceptedAt: Timestamp (nullable)
+  completedAt: Timestamp (nullable)
+  expiresAt: Timestamp (nullable)
+  assignmentMethod: Enum [AUTOMATIC, MANUAL, CLAIMED]
+
+  # Stage-Based Workflow Fields
+  stageId: String (nullable)        // workflow stage identifier
+  reworkCount: Integer (default: 0)
+  maxRework: Integer (nullable)
 }
 ```
+
+**Indexes:** `taskId`, `userId`, `status`, `assignedAt`
+**Composite Indexes:** `(userId, status, assignedAt)`
 
 ### 6. Annotation
-Stores the actual annotation data produced by annotators.
+Stores actual annotation data produced by annotators, with versioning.
+
+**Table:** `annotations`
 
 ```
-Annotation {
-  id: UUID (PK)
-  task_id: UUID (FK -> Task)
-  assignment_id: UUID (FK -> Assignment)
-  user_id: UUID (FK -> User)
-  annotation_data: JSON {
-    labels: Array
-    spans: Array
-    entities: Array
-    relationships: Array
-    attributes: Object
-    free_text: String
+Annotation extends BaseEntity {
+  taskId: UUID (FK -> Task)
+  assignmentId: UUID (FK -> Assignment)
+  userId: UUID (FK -> User)
+  annotationData: JSONB {
+    labels?: Array
+    spans?: Array
+    entities?: Array
+    relationships?: Array
+    attributes?: Object
+    freeText?: String
   }
-  version: Integer
-  is_final: Boolean
-  confidence_score: Decimal
-  time_spent: Integer (seconds)
-  tool_version: String
-  created_at: Timestamp
-  updated_at: Timestamp
-  submitted_at: Timestamp
-  metadata: JSON
+  version: Integer (default: 1)
+  isFinal: Boolean (default: false)
+  confidenceScore: Decimal (3,2, nullable)   // 0-1
+  timeSpent: Integer (seconds, nullable)
+  toolVersion: String (50, nullable)
+  submittedAt: Timestamp (nullable)
 }
 ```
 
-### 7. QualityCheck
-Records quality assessment results for tasks and annotations.
+**Indexes:** `taskId`, `userId`, `submittedAt`, `isFinal`
+**Composite Indexes:** `(taskId, version)`
+
+---
+
+### 7. AnnotationResponse
+Stores per-question responses for structured annotation forms.
+
+**Table:** `annotation_responses`
 
 ```
-QualityCheck {
-  id: UUID (PK)
-  task_id: UUID (FK -> Task)
-  annotation_id: UUID (FK -> Annotation)
-  reviewer_id: UUID (FK -> User)
-  check_type: Enum [AUTOMATED, MANUAL, CONSENSUS, GOLD_STANDARD]
+AnnotationResponse extends BaseEntity {
+  taskId: UUID (FK -> Task)
+  annotationId: UUID (FK -> Annotation)
+  assignmentId: UUID (FK -> Assignment)
+  questionId: String (255)
+  questionText: Text
+  questionType: String (50)   // MULTI_SELECT, TEXT, SINGLE_SELECT, NUMBER, DATE
+  response: JSONB {
+    value: any
+    selectedOptions?: Array<{ id: String, label: String, value: String }>
+    textValue?: String
+    numberValue?: Number
+    dateValue?: String
+  }
+  timeSpent: Integer (seconds, nullable)
+  confidenceScore: Decimal (5,2, nullable)   // 0-100
+  isSkipped: Boolean (default: false)
+  skipReason: Text (nullable)
+}
+```
+
+**Indexes:** `taskId`, `annotationId`, `assignmentId`, `questionId`
+
+---
+
+### 8. AnnotationVersion
+Stores historical snapshots of annotations when they are updated.
+
+**Table:** `annotation_versions`
+
+```
+AnnotationVersion extends BaseEntity {
+  annotationId: UUID (FK -> Annotation)
+  taskId: UUID (FK -> Task)
+  userId: UUID (FK -> User)
+  version: Integer
+  annotationData: JSONB
+  changeReason: String (nullable)
+}
+```
+
+---
+
+### 9. ReviewApproval
+Records multi-level review decisions for tasks (L1 through L5).
+
+**Table:** `review_approvals`
+
+```
+ReviewApproval extends BaseEntity {
+  taskId: UUID (FK -> Task)
+  assignmentId: UUID (FK -> Assignment)
+  reviewerId: UUID (FK -> User)
+  reviewLevel: Integer (1-5)
+  status: Enum [PENDING, APPROVED, REJECTED, CHANGES_REQUESTED]
+  comments: Text (nullable)
+  feedback: JSONB (nullable) {
+    issues?: Array<{
+      questionId: String
+      issue: String
+      severity: Enum [LOW, MEDIUM, HIGH]
+    }>
+    suggestions?: String[]
+    qualityScore?: Number
+  }
+  reviewedAt: Timestamp (nullable)
+  timeSpent: Integer (seconds, nullable)
+  requestedChanges: JSONB (nullable) Array<{
+    field: String
+    currentValue: any
+    suggestedValue?: any
+    reason: String
+  }>
+}
+```
+
+**Indexes:** `taskId`, `reviewerId`, `assignmentId`, `reviewLevel`, `status`
+**Composite Indexes:** `(taskId, reviewLevel, status)`
+
+### 10. QualityCheck
+Records automated and manual quality assessments.
+
+**Table:** `quality_checks`
+
+```
+QualityCheck extends BaseEntity {
+  taskId: UUID (FK -> Task)
+  annotationId: UUID (FK -> Annotation)
+  reviewerId: UUID (FK -> User, nullable)
+  checkType: Enum [AUTOMATED, MANUAL, CONSENSUS, GOLD_STANDARD]
   status: Enum [PASS, FAIL, NEEDS_REVISION, DISPUTED]
-  quality_score: Decimal (0-100)
-  issues: JSON [{
+  qualityScore: Decimal (5,2)   // 0-100
+  issues: JSONB Array<{
     category: String
     severity: Enum [LOW, MEDIUM, HIGH, CRITICAL]
     description: String
-    location: Object
-  }]
-  feedback: Text
-  corrected_annotation_id: UUID (FK -> Annotation)
-  created_at: Timestamp
-  updated_at: Timestamp
-  resolved_at: Timestamp
-  metadata: JSON
+    location?: Object
+  }>
+  feedback: Text (nullable)
+  correctedAnnotationId: UUID (FK -> Annotation, nullable)
+  resolvedAt: Timestamp (nullable)
 }
 ```
 
-### 8. User
-Represents all platform users (annotators, reviewers, admins, customers).
+**Indexes:** `taskId`, `annotationId`, `reviewerId`, `checkType`, `status`
+
+---
+
+### 11. QualityRule
+Defines automated quality validation rules per project.
+
+**Table:** `quality_rules`
 
 ```
-User {
-  id: UUID (PK)
-  email: String (unique)
-  username: String (unique)
-  first_name: String
-  last_name: String
+QualityRule extends BaseEntity {
+  projectId: UUID (FK -> Project)
+  name: String
+  description: Text (nullable)
+  ruleType: String
+  conditions: JSONB
+  threshold: Number (nullable)
+  severity: Enum [LOW, MEDIUM, HIGH, CRITICAL]
+  isActive: Boolean (default: true)
+}
+```
+
+---
+
+### 12. GoldTask
+Gold standard annotations used as benchmarks for automated quality comparison.
+
+**Table:** `gold_tasks`
+
+```
+GoldTask extends BaseEntity {
+  taskId: UUID (FK -> Task, unique)
+  projectId: UUID (FK -> Project)
+  goldAnnotation: JSONB {
+    labels?: Array
+    spans?: Array
+    entities?: Array
+    relationships?: Array
+    attributes?: Object
+    freeText?: String
+  }
+  tolerance: JSONB (nullable) {
+    boundaryIouThreshold?: Number
+    labelExactMatch?: Boolean
+    attributeMatch?: Enum [exact, partial, none]
+    scoreWeights?: {
+      labelF1?: Number
+      boundaryIou?: Number
+      attributeMatch?: Number
+    }
+  }
+  createdBy: UUID (FK -> User)
+  isActive: Boolean (default: true)
+}
+```
+
+**Indexes:** `taskId` (unique), `projectId`
+
+### 13. User
+Represents all platform users. In development, stored in `mock-users.json`; in production, backed by Okta.
+
+**Table:** `users`
+
+```
+User extends BaseEntity {
+  email: String (255, unique)
+  username: String (100, unique)
+  firstName: String (100)
+  lastName: String (100)
   role: Enum [ANNOTATOR, REVIEWER, QA, PROJECT_MANAGER, ADMIN, CUSTOMER]
   status: Enum [ACTIVE, INACTIVE, SUSPENDED]
-  skills: JSON [{
-    skill_name: String
+  skills: JSONB (nullable) Array<{
+    skillName: String
     proficiency: Enum [BEGINNER, INTERMEDIATE, ADVANCED, EXPERT]
-    certified_at: Timestamp
-  }]
-  performance_metrics: JSON {
-    tasks_completed: Integer
-    average_quality: Decimal
-    average_speed: Decimal
-    accuracy_rate: Decimal
+    certifiedAt: Timestamp
+  }>
+  performanceMetrics: JSONB (nullable) {
+    tasksCompleted: Integer
+    averageQuality: Decimal
+    averageSpeed: Decimal
+    accuracyRate: Decimal
   }
-  availability: JSON {
+  availability: JSONB (nullable) {
     timezone: String
-    working_hours: Object
+    workingHours: Object
     capacity: Integer
   }
-  created_at: Timestamp
-  updated_at: Timestamp
-  last_login_at: Timestamp
-  metadata: JSON
+  lastLoginAt: Timestamp (nullable)
 }
 ```
 
-### 9. Queue
-Manages task distribution and prioritization.
+**Default Permissions by Role:**
+- `ADMIN`: `['*']`
+- `PROJECT_MANAGER`: project/batch/workflow CRUD, task read/assign, user read
+- `ANNOTATOR`: task read/claim/submit, annotation CRUD
+- `REVIEWER`: task read, annotation read/review/approve/reject, quality read
+- `CUSTOMER`: project/batch read, report read, export download
+
+**Indexes:** `email` (unique), `username` (unique), `role`, `status`
+
+---
+
+### 14. ProjectTeamMember
+Junction table mapping users to projects with role-specific configuration.
+
+**Table:** `project_team_members`
 
 ```
-Queue {
-  id: UUID (PK)
+ProjectTeamMember extends BaseEntity {
+  projectId: UUID (FK -> Project)
+  userId: UUID (FK -> User)
+  role: String
+  quota: Integer (nullable)        // max tasks per day
+  isActive: Boolean (default: true)
+  assignedAt: Timestamp
+}
+```
+
+### 15. Queue
+Manages task distribution and prioritization queues.
+
+**Table:** `queues`
+
+```
+Queue extends BaseEntity {
   name: String
-  project_id: UUID (FK -> Project)
-  queue_type: Enum [ANNOTATION, REVIEW, VALIDATION, CONSENSUS]
+  projectId: UUID (FK -> Project)
+  queueType: Enum [ANNOTATION, REVIEW, VALIDATION, CONSENSUS]
   status: Enum [ACTIVE, PAUSED, ARCHIVED]
-  priority_rules: JSON {
-    priority_field: String
-    sort_order: String
+  priorityRules: JSONB {
+    priorityField: String
+    sortOrder: String   // ASC, DESC
     filters: Array
   }
-  assignment_rules: JSON {
-    auto_assign: Boolean
-    capacity_limits: Object
-    skill_requirements: Array
-    load_balancing: Object
+  assignmentRules: JSONB {
+    autoAssign: Boolean
+    capacityLimits: Object
+    skillRequirements: Array
+    loadBalancing: Object
   }
-  total_tasks: Integer
-  pending_tasks: Integer
-  created_at: Timestamp
-  updated_at: Timestamp
-  metadata: JSON
+  totalTasks: Integer
+  pendingTasks: Integer
 }
 ```
 
-### 10. Workflow
-Defines multi-stage annotation workflows using XState state machine definitions.
+**Indexes:** `projectId`, `queueType`, `status`
+
+### 16. Workflow
+Defines XState state machine workflows. Used by tasks and workflow instances.
+
+**Table:** `workflows`
 
 ```
-Workflow {
-  id: UUID (PK)
-  project_id: UUID (FK -> Project)
+Workflow extends BaseEntity {
+  projectId: UUID (FK -> Project, nullable)
   name: String
-  description: Text
+  description: Text (nullable)
   version: Integer
-  xstate_definition: JSON {
+  xstateDefinition: JSONB {
     id: String
     initial: String
     context: Object
     states: Object {
       [state_name]: {
-        on: Object (event transitions)
-        entry: Array (entry actions)
-        exit: Array (exit actions)
-        after: Object (delayed transitions)
-        invoke: Object (service invocations)
+        on: Object          // event transitions
+        entry: Array        // entry actions
+        exit: Array         // exit actions
+        after: Object       // delayed transitions
+        invoke: Object      // service invocations
         meta: Object
         type: Enum [atomic, compound, parallel, final, history]
-        states: Object (nested states for hierarchical)
+        states: Object      // nested states
       }
     }
-    guards: Object (condition functions)
-    actions: Object (action definitions)
-    services: Object (async service definitions)
-    delays: Object (delay definitions)
+    guards: Object
+    actions: Object
+    services: Object
+    delays: Object
   }
-  state_schema: JSON {
-    states: Object (state value types)
-    context: Object (context shape definition)
+  stateSchema: JSONB {
+    states: Object
+    context: Object
   }
-  event_schema: JSON [{
-    event_type: String
-    payload_schema: Object
+  eventSchema: JSONB Array<{
+    eventType: String
+    payloadSchema: Object
     description: String
-  }]
-  visualization_config: JSON {
+  }>
+  visualizationConfig: JSONB (nullable) {
     layout: String
-    node_positions: Object
+    nodePositions: Object
     styling: Object
   }
   status: Enum [DRAFT, ACTIVE, INACTIVE, DEPRECATED]
-  is_template: Boolean
-  parent_workflow_id: UUID (FK -> Workflow)
-  created_at: Timestamp
-  updated_at: Timestamp
-  created_by: UUID (FK -> User)
-  metadata: JSON
+  isTemplate: Boolean (default: false)
+  parentWorkflowId: UUID (FK -> Workflow, nullable)
+  createdBy: UUID (FK -> User)
 }
 ```
 
-### 11. Export
-Tracks batch data exports.
-
-```
-Export {
-  id: UUID (PK)
-  batch_id: UUID (FK -> Batch)
-  project_id: UUID (FK -> Project)
-  export_type: Enum [FULL, INCREMENTAL, FILTERED]
-  format: Enum [JSON, JSONL, CSV, COCO, PASCAL_VOC, CUSTOM]
-  status: Enum [PENDING, PROCESSING, COMPLETED, FAILED]
-  file_url: String
-  file_size: BigInteger (bytes)
-  record_count: Integer
-  filter_criteria: JSON
-  configuration: JSON {
-    include_metadata: Boolean
-    include_quality_metrics: Boolean
-    anonymize: Boolean
-    compression: String
-  }
-  requested_by: UUID (FK -> User)
-  created_at: Timestamp
-  completed_at: Timestamp
-  expires_at: Timestamp
-  error_message: Text
-  metadata: JSON
-}
-```
-
-### 12. AuditLog
-Comprehensive activity tracking for compliance and debugging.
-
-```
-AuditLog {
-  id: UUID (PK)
-  entity_type: String
-  entity_id: UUID
-  action: Enum [CREATE, READ, UPDATE, DELETE, ASSIGN, SUBMIT, APPROVE, REJECT, EXPORT]
-  user_id: UUID (FK -> User)
-  timestamp: Timestamp
-  ip_address: String
-  user_agent: String
-  changes: JSON {
-    before: Object
-    after: Object
-  }
-  metadata: JSON
-}
-```
-
-### 13. Notification
-User notifications for system events.
-
-```
-Notification {
-  id: UUID (PK)
-  user_id: UUID (FK -> User)
-  type: Enum [TASK_ASSIGNED, TASK_EXPIRED, FEEDBACK_RECEIVED, BATCH_COMPLETED, SYSTEM_ALERT]
-  priority: Enum [LOW, MEDIUM, HIGH, URGENT]
-  title: String
-  message: Text
-  link: String
-  is_read: Boolean
-  created_at: Timestamp
-  read_at: Timestamp
-  expires_at: Timestamp
-  metadata: JSON
-}
-```
-
-### 14. Comment
-Collaborative comments on tasks and annotations.
-
-```
-Comment {
-  id: UUID (PK)
-  entity_type: Enum [TASK, ANNOTATION, QUALITY_CHECK, BATCH]
-  entity_id: UUID
-  user_id: UUID (FK -> User)
-  parent_comment_id: UUID (FK -> Comment)
-  content: Text
-  attachments: JSON
-  is_resolved: Boolean
-  created_at: Timestamp
-  updated_at: Timestamp
-  resolved_at: Timestamp
-  resolved_by: UUID (FK -> User)
-}
-```
-
-### 15. Template
-Reusable annotation schemas and configurations.
-
-```
-Template {
-  id: UUID (PK)
-  name: String
-  category: String
-  template_type: Enum [ANNOTATION_SCHEMA, UI_CONFIG, QUALITY_RULES, WORKFLOW]
-  content: JSON
-  is_public: Boolean
-  created_by: UUID (FK -> User)
-  created_at: Timestamp
-  updated_at: Timestamp
-  usage_count: Integer
-  metadata: JSON
-}
-```
-
-### 16. StateTransition
-Logs XState machine transitions and events for tasks and workflows.
-
-```
-StateTransition {
-  id: UUID (PK)
-  entity_type: Enum [TASK, BATCH, ASSIGNMENT, WORKFLOW_INSTANCE]
-  entity_id: UUID
-  workflow_id: UUID (FK -> Workflow)
-  
-  # XState Event Details
-  event: JSON {
-    type: String (event type)
-    payload: Object (event data)
-    timestamp: Timestamp
-    origin: String (event source)
-  }
-  
-  # State Transition
-  from_state: JSON {
-    value: String | Object
-    context: Object
-    tags: Array<String>
-  }
-  to_state: JSON {
-    value: String | Object
-    context: Object
-    tags: Array<String>
-  }
-  
-  # Transition Metadata
-  transition_type: Enum [EXTERNAL, INTERNAL, DELAYED, GUARDED, ALWAYS]
-  guards_evaluated: JSON [{
-    guard_name: String
-    result: Boolean
-    condition: String
-  }]
-  actions_executed: JSON [{
-    action_name: String
-    action_type: Enum [ENTRY, EXIT, TRANSITION, ASSIGN]
-    execution_time: Integer (milliseconds)
-    result: Object
-  }]
-  
-  user_id: UUID (FK -> User)
-  triggered_by: Enum [USER_ACTION, SYSTEM, TIMER, WEBHOOK, SERVICE]
-  duration: Integer (milliseconds)
-  is_automatic: Boolean
-  error: JSON {
-    message: String
-    stack: String
-    code: String
-  }
-  
-  created_at: Timestamp
-  metadata: JSON
-}
-```
+**Indexes:** `projectId`, `status`, `version`, `isTemplate`
 
 ### 17. WorkflowInstance
 Active XState machine instances for complex multi-task workflows.
 
+**Table:** `workflow_instances`
+
 ```
-WorkflowInstance {
-  id: UUID (PK)
-  workflow_id: UUID (FK -> Workflow)
-  batch_id: UUID (FK -> Batch)
+WorkflowInstance extends BaseEntity {
+  workflowId: UUID (FK -> Workflow)
+  batchId: UUID (FK -> Batch, nullable)
   name: String
-  
-  # XState Actor State
-  actor_state: JSON {
-    value: String | Object (current state)
-    context: Object (shared context across tasks)
-    children: Object (spawned child actors)
+  actorState: JSONB {
+    value: String | Object
+    context: Object
+    children: Object
     history: Object
     done: Boolean
-    tags: Array<String>
+    tags: String[]
   }
-  
-  # Actor Management
-  parent_instance_id: UUID (FK -> WorkflowInstance)
-  actor_type: Enum [ROOT, CHILD, INVOKED]
-  actor_ref_id: String (XState actor reference)
-  
-  # Parallel States (for parallel workflows)
-  parallel_states: JSON {
-    regions: Object (multiple active states)
+  parentInstanceId: UUID (FK -> WorkflowInstance, nullable)
+  actorType: Enum [ROOT, CHILD, INVOKED]
+  actorRefId: String (nullable)
+  parallelStates: JSONB (nullable) {
+    regions: Object
   }
-  
-  # Persistence
-  snapshot: JSON (full persisted state for restore)
-  checkpoint_at: Timestamp
-  
+  snapshot: JSONB (nullable)
+  checkpointAt: Timestamp (nullable)
   status: Enum [RUNNING, PAUSED, COMPLETED, FAILED, STOPPED]
-  started_at: Timestamp
-  completed_at: Timestamp
-  error: JSON
-  
-  created_at: Timestamp
-  updated_at: Timestamp
-  metadata: JSON
+  startedAt: Timestamp (nullable)
+  completedAt: Timestamp (nullable)
+  error: JSONB (nullable)
+}
+```
+
+**Indexes:** `workflowId`, `batchId`, `status`, `actorType`, `parentInstanceId`
+**Composite Indexes:** `(batchId, status)`
+
+---
+
+### 18. StateTransition
+Immutable audit log of all XState machine transitions.
+
+**Table:** `state_transitions`
+
+```
+StateTransition extends BaseEntity {
+  entityType: Enum [TASK, BATCH, ASSIGNMENT, WORKFLOW_INSTANCE]
+  entityId: UUID
+  workflowId: UUID (FK -> Workflow)
+  event: JSONB {
+    type: String
+    payload: Object
+    timestamp: Timestamp
+    origin: String
+  }
+  fromState: JSONB {
+    value: String | Object
+    context: Object
+    tags: String[]
+  }
+  toState: JSONB {
+    value: String | Object
+    context: Object
+    tags: String[]
+  }
+  transitionType: Enum [EXTERNAL, INTERNAL, DELAYED, GUARDED, ALWAYS]
+  guardsEvaluated: JSONB Array<{
+    guardName: String
+    result: Boolean
+    condition: String
+  }>
+  actionsExecuted: JSONB Array<{
+    actionName: String
+    actionType: Enum [ENTRY, EXIT, TRANSITION, ASSIGN]
+    executionTime: Integer   // milliseconds
+    result: Object
+  }>
+  userId: UUID (FK -> User, nullable)
+  triggeredBy: Enum [USER_ACTION, SYSTEM, TIMER, WEBHOOK, SERVICE]
+  duration: Integer (milliseconds, nullable)
+  isAutomatic: Boolean (default: false)
+  error: JSONB (nullable)
+}
+```
+
+**Indexes:** `entityType`, `entityId`, `workflowId`, `createdAt`, `userId`
+**Composite Indexes:** `(entityType, entityId, createdAt)`, `(workflowId, event.type, createdAt)`
+
+---
+
+### 19. Export
+Tracks batch data exports.
+
+**Table:** `exports`
+
+```
+Export extends BaseEntity {
+  batchId: UUID (FK -> Batch)
+  projectId: UUID (FK -> Project)
+  exportType: Enum [FULL, INCREMENTAL, FILTERED]
+  format: Enum [JSON, JSONL, CSV, COCO, PASCAL_VOC, CUSTOM]
+  status: Enum [PENDING, PROCESSING, COMPLETED, FAILED]
+  fileUrl: String (nullable)
+  fileSize: BigInt (bytes, nullable)
+  recordCount: Integer (nullable)
+  filterCriteria: JSONB (nullable)
+  configuration: JSONB {
+    includeMetadata: Boolean
+    includeQualityMetrics: Boolean
+    anonymize: Boolean
+    compression: String
+  }
+  requestedBy: UUID (FK -> User)
+  completedAt: Timestamp (nullable)
+  expiresAt: Timestamp (nullable)
+  errorMessage: Text (nullable)
+}
+```
+
+**Indexes:** `batchId`, `projectId`, `status`, `createdAt`
+
+### 20. AuditLog
+Comprehensive activity tracking for compliance and debugging.
+
+**Table:** `audit_logs`
+
+```
+AuditLog extends BaseEntity {
+  entityType: String
+  entityId: UUID
+  action: Enum [CREATE, READ, UPDATE, DELETE, ASSIGN, SUBMIT, APPROVE, REJECT, EXPORT]
+  userId: UUID (FK -> User)
+  timestamp: Timestamp
+  ipAddress: String (nullable)
+  userAgent: String (nullable)
+  changes: JSONB (nullable) {
+    before: Object
+    after: Object
+  }
+}
+```
+
+**Indexes:** `entityType`, `entityId`, `userId`, `timestamp`, `action`
+**Composite Indexes:** `(entityType, entityId, timestamp)`
+
+### 21. Notification
+User notifications for system events.
+
+**Table:** `notifications`
+
+```
+Notification extends BaseEntity {
+  userId: UUID (FK -> User)
+  type: Enum [TASK_ASSIGNED, TASK_EXPIRED, FEEDBACK_RECEIVED, BATCH_COMPLETED, SYSTEM_ALERT]
+  priority: Enum [LOW, MEDIUM, HIGH, URGENT]
+  title: String
+  message: Text
+  link: String (nullable)
+  isRead: Boolean (default: false)
+  readAt: Timestamp (nullable)
+  expiresAt: Timestamp (nullable)
+}
+```
+
+**Indexes:** `userId`, `isRead`, `createdAt`
+
+### 22. Comment
+Collaborative comments on tasks.
+
+**Table:** `comments`
+
+```
+Comment extends BaseEntity {
+  taskId: UUID (FK -> Task)
+  userId: UUID (FK -> User)
+  parentCommentId: UUID (FK -> Comment, nullable)
+  content: Text
+  attachments: JSONB (nullable)
+  isResolved: Boolean (default: false)
+  resolvedAt: Timestamp (nullable)
+  resolvedBy: UUID (FK -> User, nullable)
+}
+```
+
+### 23. Template
+Reusable annotation schemas and configurations.
+
+**Table:** `templates`
+
+```
+Template extends BaseEntity {
+  name: String
+  category: String
+  templateType: Enum [ANNOTATION_SCHEMA, UI_CONFIG, QUALITY_RULES, WORKFLOW]
+  content: JSONB
+  isPublic: Boolean (default: false)
+  createdBy: UUID (FK -> User)
+  usageCount: Integer (default: 0)
+}
+```
+
+---
+
+### 24. PluginSecret
+Encrypted secrets scoped to projects for use in API plugins.
+
+**Table:** `plugin_secrets`
+
+```
+PluginSecret extends BaseEntity {
+  projectId: UUID (FK -> Project)
+  name: String (255)
+  value: Text (encrypted)
+  description: String (nullable)
+  createdBy: UUID (nullable)
+}
+```
+
+**Unique Constraint:** `(projectId, name)`
+
+---
+
+### 25. PluginExecutionLog
+Audit log for plugin executions. Answer values are never stored.
+
+**Table:** `plugin_execution_logs`
+
+```
+PluginExecutionLog extends BaseEntity {
+  projectId: UUID (FK -> Project)
+  taskId: UUID (nullable)
+  pluginId: String
+  pluginName: String
+  trigger: Enum [ON_BLUR, ON_SUBMIT]
+  result: Enum [PASS, WARN, FAIL]
+  durationMs: Integer
+  error: Text (nullable)
+  executedAt: Timestamp
 }
 ```
 
@@ -545,6 +902,7 @@ WorkflowInstance {
 - `Project` → `Task` (1:N)
 - `Project` → `Queue` (1:N)
 - `Project` → `Workflow` (1:N)
+- `Project` → `ProjectTeamMember` (1:N)
 - `Workflow` → `Task` (1:N)
 - `Workflow` → `WorkflowInstance` (1:N)
 - `Workflow` → `StateTransition` (1:N)
@@ -554,53 +912,72 @@ WorkflowInstance {
 - `Task` → `Assignment` (1:N)
 - `Task` → `Annotation` (1:N)
 - `Task` → `QualityCheck` (1:N)
-- `Task` → `StateTransition` (1:N)
+- `Task` → `ReviewApproval` (1:N)
+- `Task` → `AnnotationResponse` (1:N)
+- `Task` → `Comment` (1:N)
+- `Task` → `GoldTask` (1:1)
+- `Assignment` → `Annotation` (1:N)
+- `Assignment` → `AnnotationResponse` (1:N)
+- `Assignment` → `ReviewApproval` (1:N)
+- `Annotation` → `QualityCheck` (1:N)
+- `Annotation` → `AnnotationResponse` (1:N)
+- `Annotation` → `AnnotationVersion` (1:N)
 - `WorkflowInstance` → `WorkflowInstance` (1:N, parent-child actors)
 - `WorkflowInstance` → `StateTransition` (1:N)
-- `Assignment` → `Annotation` (1:1 or 1:N)
-- `Annotation` → `QualityCheck` (1:N)
 - `User` → `Assignment` (1:N)
 - `User` → `Annotation` (1:N)
 - `User` → `QualityCheck` (1:N as reviewer)
+- `User` → `ReviewApproval` (1:N as reviewer)
 - `User` → `AuditLog` (1:N)
 - `User` → `Notification` (1:N)
 - `User` → `StateTransition` (1:N)
+- `User` → `ProjectTeamMember` (1:N)
 - `Comment` → `Comment` (1:N, parent-child)
 
-### Many-to-Many (via junction tables if needed)
-- `User` ↔ `Project` (via `ProjectMember` table)
-- `Task` ↔ `User` (via `Assignment` table)
+### Many-to-Many (via junction tables)
+- `User` ↔ `Project` (via `ProjectTeamMember`)
+- `Task` ↔ `User` (via `Assignment`)
 
 ---
 
-## Indexes
+## Enumerations Reference
 
-### Primary Indexes
-- All `id` fields (primary keys)
-
-### Secondary Indexes
-- `Project`: `customer_id`, `status`, `created_at`, `default_workflow_id`
-- `Batch`: `project_id`, `status`, `priority`, `due_date`
-- `Task`: `batch_id`, `project_id`, `workflow_id`, `status`, `priority`, `assigned_at`, `due_date`, `state_updated_at`
-- `Assignment`: `task_id`, `user_id`, `status`, `assigned_at`
-- `Annotation`: `task_id`, `user_id`, `submitted_at`, `is_final`
-- `QualityCheck`: `task_id`, `annotation_id`, `reviewer_id`, `check_type`, `status`
-- `User`: `email`, `username`, `role`, `status`
-- `Queue`: `project_id`, `queue_type`, `status`
-- `Workflow`: `project_id`, `status`, `version`, `is_template`
-- `WorkflowInstance`: `workflow_id`, `batch_id`, `status`, `actor_type`, `parent_instance_id`
-- `StateTransition`: `entity_type`, `entity_id`, `workflow_id`, `created_at`, `user_id`
-- `Export`: `batch_id`, `project_id`, `status`, `created_at`
-- `AuditLog`: `entity_type`, `entity_id`, `user_id`, `timestamp`, `action`
-- `Notification`: `user_id`, `is_read`, `created_at`
-
-### Composite Indexes
-- `Task`: (`project_id`, `status`, `priority`), (`workflow_id`, `machine_state.value`)
-- `Assignment`: (`user_id`, `status`, `assigned_at`)
-- `Annotation`: (`task_id`, `version`)
-- `StateTransition`: (`entity_type`, `entity_id`, `created_at`), (`workflow_id`, `event.type`, `created_at`)
-- `WorkflowInstance`: (`batch_id`, `status`), (`workflow_id`, `actor_state.value`)
-- `AuditLog`: (`entity_type`, `entity_id`, `timestamp`)
+| Enum | Values |
+|------|--------|
+| `ProjectType` | TEXT, IMAGE, VIDEO, AUDIO, MULTIMODAL |
+| `ProjectStatus` | DRAFT, ACTIVE, PAUSED, COMPLETED, ARCHIVED |
+| `CustomerStatus` | ACTIVE, INACTIVE, SUSPENDED |
+| `BatchStatus` | CREATED, IN_PROGRESS, REVIEW, COMPLETED, EXPORTED |
+| `TaskType` | ANNOTATION, REVIEW, VALIDATION, CONSENSUS |
+| `TaskStatus` | QUEUED, ASSIGNED, IN_PROGRESS, IN_REVIEW, SUBMITTED, APPROVED, REJECTED, SKIPPED |
+| `AssignmentStatus` | ASSIGNED, ACCEPTED, IN_PROGRESS, COMPLETED, EXPIRED, REASSIGNED |
+| `AssignmentMethod` | AUTOMATIC, MANUAL, CLAIMED |
+| `WorkflowStage` | ANNOTATION, REVIEW, VALIDATION, CONSENSUS |
+| `UserRole` | ANNOTATOR, REVIEWER, QA, PROJECT_MANAGER, ADMIN, CUSTOMER |
+| `UserStatus` | ACTIVE, INACTIVE, SUSPENDED |
+| `SkillProficiency` | BEGINNER, INTERMEDIATE, ADVANCED, EXPERT |
+| `QueueType` | ANNOTATION, REVIEW, VALIDATION, CONSENSUS |
+| `QueueStatus` | ACTIVE, PAUSED, ARCHIVED |
+| `WorkflowStatus` | DRAFT, ACTIVE, INACTIVE, DEPRECATED |
+| `ExportType` | FULL, INCREMENTAL, FILTERED |
+| `ExportFormat` | JSON, JSONL, CSV, COCO, PASCAL_VOC, CUSTOM |
+| `ExportStatus` | PENDING, PROCESSING, COMPLETED, FAILED |
+| `QualityCheckType` | AUTOMATED, MANUAL, CONSENSUS, GOLD_STANDARD |
+| `QualityCheckStatus` | PASS, FAIL, NEEDS_REVISION, DISPUTED |
+| `IssueSeverity` | LOW, MEDIUM, HIGH, CRITICAL |
+| `ReviewApprovalStatus` | PENDING, APPROVED, REJECTED, CHANGES_REQUESTED |
+| `WorkflowInstanceStatus` | RUNNING, PAUSED, COMPLETED, FAILED, STOPPED |
+| `ActorType` | ROOT, CHILD, INVOKED |
+| `TransitionType` | EXTERNAL, INTERNAL, DELAYED, GUARDED, ALWAYS |
+| `EventTrigger` | USER_ACTION, SYSTEM, TIMER, WEBHOOK, SERVICE |
+| `TemplateType` | ANNOTATION_SCHEMA, UI_CONFIG, QUALITY_RULES, WORKFLOW |
+| `StateTransitionEntityType` | TASK, BATCH, ASSIGNMENT, WORKFLOW_INSTANCE |
+| `NotificationType` | TASK_ASSIGNED, TASK_EXPIRED, FEEDBACK_RECEIVED, BATCH_COMPLETED, SYSTEM_ALERT |
+| `Priority` | LOW, MEDIUM, HIGH, URGENT |
+| `AnnotationQuestionType` | MULTI_SELECT, TEXT, SINGLE_SELECT, NUMBER, DATE |
+| `PluginType` | API, SCRIPT |
+| `PluginTrigger` | ON_BLUR, ON_SUBMIT |
+| `PluginFailBehavior` | HARD_BLOCK, SOFT_WARN, ADVISORY |
 
 ---
 
@@ -609,19 +986,20 @@ WorkflowInstance {
 ### Unique Constraints
 - `User.email`
 - `User.username`
-- `Task.external_id` (per project)
+- `GoldTask.taskId` (one gold standard per task)
+- `PluginSecret.(projectId, name)`
 
 ### Check Constraints
 - `priority` values between 1-10
-- `quality_score` between 0-100
-- `confidence_score` between 0-1
-- Status transitions follow valid state machines
+- `qualityScore` between 0-100
+- `confidenceScore` (Annotation) between 0-1
+- `confidenceScore` (AnnotationResponse) between 0-100
+- `reviewLevel` between 1-5
 
-### Foreign Key Constraints
-- All FK relationships defined with CASCADE or SET NULL policies based on business rules
-- `ON DELETE CASCADE`: AuditLog, Notification, Comment
-- `ON DELETE SET NULL`: created_by, updated_by references
-- `ON DELETE RESTRICT`: Core entities (Project, Batch, Task)
+### Foreign Key Policies
+- `ON DELETE CASCADE`: AuditLog, Notification, Comment, AnnotationResponse, ReviewApproval, GoldTask
+- `ON DELETE SET NULL`: `createdBy`, `defaultWorkflowId`
+- `ON DELETE RESTRICT`: Project, Batch, Task (core entities)
 
 ---
 
@@ -630,40 +1008,124 @@ WorkflowInstance {
 - **Active Data**: Projects in ACTIVE status
 - **Archived Data**: Projects older than 2 years in COMPLETED/ARCHIVED status
 - **Audit Logs**: Retained for 7 years for compliance
+- **State Transitions**: Full history retained; transitions older than 90 days archived
 - **Exports**: Temporary files deleted after 30 days (metadata retained)
-- **Soft Deletes**: Implemented for User, Project, Batch (status = ARCHIVED)
+- **Plugin Execution Logs**: 90-day rolling retention
+- **Soft Deletes**: Implemented for User, Project, Batch (status = ARCHIVED/INACTIVE)
 
 ---
 
 ## Scalability Considerations
 
-1. **Partitioning**: 
-   - `Task` table partitioned by `created_at` (monthly)
-   - `StateTransition` partitioned by `created_at` (daily for high volume)
-   - `AuditLog` partitioned by `timestamp` (weekly)
-   - `Annotation` partitioned by `project_id`
+### Partitioning
+- `Task` table: partitioned by `createdAt` (monthly)
+- `StateTransition`: partitioned by `createdAt` (daily for high volume)
+- `AuditLog`: partitioned by `timestamp` (weekly)
+- `Annotation`: partitioned by `projectId`
 
-2. **Archiving**: 
-   - Completed projects older than 1 year → cold storage
-   - Historical state transitions older than 90 days → archive
-   - Historical audit logs → separate archive database
+### Archiving
+- Completed projects older than 1 year → cold storage
+- Historical state transitions older than 90 days → archive
+- Historical audit logs → separate archive database
 
-3. **Caching**: 
-   - User profiles and permissions
-   - Active project configurations
-   - **XState workflow definitions** (hot cache for active workflows)
-   - **Current machine states** (Redis/in-memory for fast state lookups)
-   - Queue statistics
+### Caching (Redis)
+- User profiles and JWT sessions (Auth Service)
+- Active project configurations including annotation questions and plugin definitions
+- **XState workflow definitions** (compiled machine cache)
+- **Current task machine states** (fast state lookups)
+- Queue statistics and pending task counts
 
-4. **Read Replicas**: 
-   - Reporting and analytics queries
-   - Export generation
-   - Dashboard metrics
-   - State transition history queries
+### Read Replicas
+- Reporting and analytics queries
+- Export generation
+- Dashboard metrics
+- State transition history queries
 
-5. **XState-Specific Optimizations**:
-   - **State Machine Cache**: Cache compiled XState machines in-memory
-   - **Actor Registry**: Maintain active actor references in distributed cache
-   - **Event Queue**: Use message queue (Redis/RabbitMQ) for event processing
-   - **Snapshot Storage**: Periodic snapshots of long-running workflow instances
-   - **Context Compression**: Compress large machine contexts in storage
+### XState-Specific Optimizations
+- **State Machine Cache**: Compiled XState machine definitions cached in-memory
+- **Actor Registry**: Active actor references maintained in Redis
+- **Event Queue**: Kafka message queue for async event processing between services
+- **Snapshot Storage**: Periodic snapshots of long-running workflow instances
+- **Context Compression**: Large machine contexts compressed in storage
+
+---
+
+## Performance & Scalability Implementation
+
+### Connection Pools
+Each service configures TypeORM's `extra.max` pool via `DB_POOL_SIZE` env var:
+
+| Service | Default Pool Size |
+|---------|------------------|
+| Task Management | 20 |
+| Project Management | 20 |
+| Annotation QA | 15 |
+| Workflow Engine | 15 |
+| Auth Service | 10 |
+
+In production, a **PgBouncer** instance in transaction-pooling mode sits in front of Postgres to multiplex these pools down to 30–40 actual server connections.
+
+### Redis Task Queue
+Task claiming uses Redis sorted sets instead of SELECT queries to eliminate race conditions at scale.
+
+**Key schema**: `task_queue:{projectId}:{taskType}` and `task_queue:{projectId}:ALL`
+
+**Score formula**: `(10 - priority) × 1e10 + unix_created_at_seconds`
+- Lower score = dequeued first (`ZPOPMIN`)
+- Priority 10 + oldest created = smallest score = first out
+
+**Lifecycle**:
+1. Task created → `ZADD NX` to both keys
+2. Annotator claims → `ZPOPMIN` (atomic) → assign in Postgres
+3. Manual assignment / status change → `ZREM` from queue
+
+**Fallback**: If Redis is cold (restart), `getNextTask` falls back to `SELECT FOR UPDATE SKIP LOCKED` in a Postgres transaction, and re-populates Redis as it goes.
+
+### Assignment Locks
+Short-lived Redis locks prevent double-assignment during the `dequeue → Postgres write` window:
+
+**Key**: `assignment_lock:{taskId}`
+**Value**: `userId` who holds the lock
+**TTL**: 30 seconds (auto-expires on crash)
+**Mechanism**: `SET NX PX 30000` — atomic, only one caller wins
+
+### Performance Indexes
+Applied via [`libs/common/src/database/migrations/001_performance_indexes.sql`](../libs/common/src/database/migrations/001_performance_indexes.sql). All use `CREATE INDEX CONCURRENTLY IF NOT EXISTS` for zero-downtime deployment.
+
+| Index | Table | Type | Purpose |
+|-------|-------|------|---------|
+| `idx_tasks_claim` | `tasks` | B-tree partial (`WHERE status='QUEUED'`) | Task claim hot path — only indexes claimable rows |
+| `idx_tasks_project_status_priority` | `tasks` | B-tree composite | List/filter endpoints |
+| `idx_tasks_machine_state_gin` | `tasks` | GIN | JSON operator queries on `machine_state` (stage routing) |
+| `idx_tasks_annotation_responses_gin` | `tasks` | GIN | Denormalized annotation response searches |
+| `idx_assignments_task_user_status` | `assignments` | B-tree | Duplicate-assignment check per user+task |
+| `idx_assignments_expiry` | `assignments` | B-tree partial (`WHERE status='ASSIGNED'`) | Assignment expiry background job |
+| `idx_assignments_task_stage_status` | `assignments` | B-tree | Stage assignment count subquery |
+| `idx_annotations_data_gin` | `annotations` | GIN | Annotation content search (label/span) |
+| `idx_annotations_task_is_final` | `annotations` | B-tree | QA service annotation fetches |
+| `idx_annotation_responses_task_question` | `annotation_responses` | B-tree | Per-question response lookup |
+| `idx_review_approvals_task_level_status` | `review_approvals` | B-tree | Multi-level review queries |
+| `idx_state_transitions_entity_time` | `state_transitions` | B-tree | Audit log queries per entity |
+| `idx_state_transitions_workflow_time` | `state_transitions` | B-tree | Workflow transition analytics |
+| `idx_quality_checks_task_type_status` | `quality_checks` | B-tree | Project metrics aggregation |
+| `idx_notifications_user_unread` | `notifications` | B-tree partial (`WHERE is_read=false`) | Unread notification fetch |
+| `idx_audit_logs_entity_time` | `audit_logs` | B-tree | Time-range audit queries |
+| `idx_plugin_logs_project_time` | `plugin_execution_logs` | B-tree | Recent plugin log queries |
+
+### Table Partitioning (Production)
+High-volume append-only tables should be partitioned by time. See the migration file for DDL examples.
+
+| Table | Partition By | Interval | Retention |
+|-------|-------------|----------|-----------|
+| `state_transitions` | `created_at` | Daily | Full history; archive >90 days |
+| `audit_logs` | `timestamp` | Weekly | 7 years (compliance) |
+| `plugin_execution_logs` | `executed_at` | Monthly | 90 days — drop old partitions |
+
+### Read Replica Routing
+The following endpoints should be routed to a read replica via TypeORM replication config or a separate `DataSource`:
+- `GET /projects/:id/statistics`
+- `GET /batches/:id/statistics`
+- `GET /quality-checks/project/:id/metrics`
+- `GET /tasks/time-analytics`
+- `GET /state-transitions` (audit reads)
+- `GET /audit-logs`

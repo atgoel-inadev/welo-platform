@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { QualityCheck, QualityCheckType, QualityCheckStatus, Project, Task, Annotation } from '@app/common';
-import { KafkaService } from '../kafka/kafka.service';
+import { KafkaService } from '@app/infrastructure';
 import { StateManagementService } from '../state-management/state-management.service';
 
 /**

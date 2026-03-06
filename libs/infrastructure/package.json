@@ -1,0 +1,7 @@
+{
+  "name": "@welo/infrastructure",
+  "version": "1.0.0",
+  "description": "Shared infrastructure modules for Welo Platform services",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts"
+}

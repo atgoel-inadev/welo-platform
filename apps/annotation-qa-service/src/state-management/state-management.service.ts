@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task, TaskStatus, Project } from '@app/common';
 import { WorkflowEngineClient } from './workflow-engine.client';
-import { KafkaService } from '../kafka/kafka.service';
+import { KafkaService } from '@app/infrastructure';
 
 export interface EvaluationResult {
   taskId: string;

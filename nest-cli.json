@@ -69,6 +69,60 @@
       "compilerOptions": {
         "tsConfigPath": "libs/common/tsconfig.lib.json"
       }
+    },
+    "infrastructure": {
+      "type": "library",
+      "root": "libs/infrastructure",
+      "entryFile": "index",
+      "sourceRoot": "libs/infrastructure/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/infrastructure/tsconfig.lib.json"
+      }
+    },
+    "file-storage-service": {
+      "type": "application",
+      "root": "apps/file-storage-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/file-storage-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/file-storage-service/tsconfig.app.json"
+      }
+    },
+    "export-service": {
+      "type": "application",
+      "root": "apps/export-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/export-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/export-service/tsconfig.app.json"
+      }
+    },
+    "notification-service": {
+      "type": "application",
+      "root": "apps/notification-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/notification-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/notification-service/tsconfig.app.json"
+      }
+    },
+    "analytics-service": {
+      "type": "application",
+      "root": "apps/analytics-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/analytics-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/analytics-service/tsconfig.app.json"
+      }
+    },
+    "audit-service": {
+      "type": "application",
+      "root": "apps/audit-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/audit-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/audit-service/tsconfig.app.json"
+      }
     }
   }
 }

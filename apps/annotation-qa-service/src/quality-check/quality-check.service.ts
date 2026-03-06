@@ -6,7 +6,7 @@ import { CreateQualityCheckDto, ResolveQualityCheckDto, CreateQualityRuleDto } f
 import { QualityRulesEngine } from './quality-rules.engine';
 import { GoldTaskService } from '../gold-task/gold-task.service';
 import { StateManagementService } from '../state-management/state-management.service';
-import { KafkaService } from '../kafka/kafka.service';
+import { KafkaService } from '@app/infrastructure';
 
 @Injectable()
 export class QualityCheckService {

@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { Workflow, WorkflowStatus } from '@app/common';
 import { CreateWorkflowDto, UpdateWorkflowDto, SimulateWorkflowDto } from './dto/workflow.dto';
 import { createMachine, createActor, StateValue } from 'xstate';
-import { RedisService } from '../redis/redis.service';
+import { RedisService } from '@app/infrastructure';
 import { CACHE_KEYS } from '@app/common';
 
 @Injectable()

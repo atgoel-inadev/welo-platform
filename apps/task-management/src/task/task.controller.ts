@@ -14,7 +14,6 @@ import {
   GetNextTaskDto,
   TaskFilterDto,
   BulkTaskActionDto,
-  TaskTransitionDto,
   SaveAnnotationDto,
   SaveReviewDto,
   TimeAnalyticsQueryDto,
@@ -133,14 +132,6 @@ export class TaskController {
   @ApiResponse({ status: 404, description: 'Task not found' })
   async updateTaskStatus(@Param('id') id: string, @Body() dto: UpdateTaskStatusDto) {
     return this.taskService.updateTaskStatus(id, dto);
-  }
-
-  @Post(':id/events')
-  @ApiOperation({ summary: 'Send event to task (XState transition)' })
-  @ApiResponse({ status: 200, description: 'Event sent successfully' })
-  @ApiResponse({ status: 404, description: 'Task not found' })
-  async sendEvent(@Param('id') id: string, @Body() dto: TaskTransitionDto) {
-    return this.taskService.sendEvent(id, dto);
   }
 
   @Get(':id/statistics')

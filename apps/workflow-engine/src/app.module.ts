@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { AuditInterceptor } from '@app/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { RedisModule } from './redis/redis.module';
+import { RedisModule, HealthModule, KafkaModule } from '@app/infrastructure';
 import { WorkflowModule } from './workflow/workflow.module';
 import { EventModule } from './event/event.module';
 import { InstanceModule } from './instance/instance.module';
 import { TransitionModule } from './transition/transition.module';
-import { HealthModule } from './health/health.module';
+import { StateTransitionModule } from './state-transition/state-transition.module';
 import {
   Workflow,
   WorkflowInstance,
@@ -69,15 +71,34 @@ import {
         ],
         synchronize: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
+        extra: {
+          max: configService.get<number>('DB_POOL_SIZE', 15),
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 3000,
+        },
       }),
       inject: [ConfigService],
     }),
     RedisModule,
+    KafkaModule.forRoot({
+      clientId: 'workflow-engine',
+      consumerGroupId: 'workflow-engine-group',
+      topics: [
+        'annotation.submitted',
+        'quality_check.completed',
+        'task.created',
+      ],
+    }),
     WorkflowModule,
     EventModule,
     InstanceModule,
     TransitionModule,
-    HealthModule,
+    StateTransitionModule,
+    HealthModule.forRoot({ serviceName: 'workflow-engine', version: '1.0.0' }),
+    TypeOrmModule.forFeature([AuditLog]),
+  ],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })
 export class AppModule {}

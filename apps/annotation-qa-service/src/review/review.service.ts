@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { ReviewApproval, ReviewApprovalStatus, Annotation, QualityCheck, QualityCheckStatus, Task } from '@app/common';
 import { SubmitReviewDto, ReviewDecision } from './dto/review.dto';
 import { StateManagementService } from '../state-management/state-management.service';
-import { KafkaService } from '../kafka/kafka.service';
+import { KafkaService } from '@app/infrastructure';
 
 @Injectable()
 export class ReviewService {

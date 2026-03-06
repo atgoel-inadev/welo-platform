@@ -29,12 +29,7 @@ export const EVENTS = {
   QUALITY_CHECK_FAILED: 'quality_check.failed',
 } as const;
 
-export const KAFKA_TOPICS = {
-  TASK_EVENTS: 'task-events',
-  WORKFLOW_EVENTS: 'workflow-events',
-  ANNOTATION_EVENTS: 'annotation-events',
-  QUALITY_EVENTS: 'quality-events',
-} as const;
+export { KAFKA_TOPICS, KafkaTopic } from './kafka-topics';
 
 export const CACHE_KEYS = {
   WORKFLOW_DEFINITION: (id: string) => `workflow:definition:${id}`,

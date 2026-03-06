@@ -101,7 +101,8 @@
       "<rootDir>/libs/"
     ],
     "moduleNameMapper": {
-      "^@welo/common(|/.*)$": "<rootDir>/libs/common/src/$1"
+      "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1",
+      "^@app/infrastructure(|/.*)$": "<rootDir>/libs/infrastructure/src/$1"
     }
   }
 }

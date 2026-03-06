@@ -3,10 +3,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkflowService } from './workflow.service';
 import { WorkflowController } from './workflow.controller';
 import { Workflow } from '@app/common';
-import { RedisModule } from '../redis/redis.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Workflow]), RedisModule],
+  imports: [TypeOrmModule.forFeature([Workflow])],
   controllers: [WorkflowController],
   providers: [WorkflowService],
   exports: [WorkflowService],

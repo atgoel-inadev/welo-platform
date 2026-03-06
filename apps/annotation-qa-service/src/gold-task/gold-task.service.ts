@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { GoldTask, Annotation } from '@app/common';
 import { CreateGoldTaskDto, UpdateGoldTaskDto, GoldCompareDto } from './dto/gold-task.dto';
 import { GoldComparisonEngine } from './gold-comparison.engine';
-import { KafkaService } from '../kafka/kafka.service';
+import { KafkaService } from '@app/infrastructure';
 
 @Injectable()
 export class GoldTaskService {

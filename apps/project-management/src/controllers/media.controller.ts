@@ -1,5 +1,10 @@
-import { Controller, Get, Param, Res, HttpException, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import {
+  Controller, Get, Post, Param, Query, Res, HttpException, HttpStatus,
+  UseInterceptors, UploadedFile, BadRequestException,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
 import { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -8,6 +13,87 @@ import * as path from 'path';
 @Controller('media')
 export class MediaController {
   private readonly mediaPath = process.env.MEDIA_FILES_PATH || '/app/media';
+
+  /**
+   * Upload a file to the media directory.
+   * POST /api/v1/media/upload
+   * Query params: projectId (required), batchName (optional)
+   * The file is stored at {mediaPath}/{projectId}/{batchName}/{originalname}
+   * or {mediaPath}/{originalname} when no project/batch is provided.
+   */
+  @Post('upload')
+  @ApiOperation({
+    summary: 'Upload a media file',
+    description: 'Stores the file under {mediaPath}/{projectId}/{batchName}/{filename}. Returns the file URL for use when creating tasks.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary', description: 'File to upload' },
+      },
+    },
+  })
+  @ApiQuery({ name: 'projectId', required: false, description: 'Project ID — determines storage sub-folder' })
+  @ApiQuery({ name: 'batchName', required: false, description: 'Batch name — determines storage sub-folder' })
+  @ApiResponse({ status: 201, description: 'File uploaded successfully', schema: { properties: { fileUrl: { type: 'string' }, fileName: { type: 'string' }, fileSize: { type: 'number' }, mimeType: { type: 'string' } } } })
+  @ApiResponse({ status: 400, description: 'No file provided or unsupported type' })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: (req, _file, cb) => {
+          const base = process.env.MEDIA_FILES_PATH || '/app/media';
+          const projectId = req.query['projectId'] as string | undefined;
+          const batchName = req.query['batchName'] as string | undefined;
+
+          let dest = base;
+          if (projectId) {
+            dest = path.join(dest, path.basename(projectId));
+            if (batchName) {
+              dest = path.join(dest, batchName.replace(/[^a-zA-Z0-9-_]/g, '_'));
+            }
+          }
+
+          fs.mkdirSync(dest, { recursive: true });
+          cb(null, dest);
+        },
+        filename: (_req, file, cb) => {
+          // Preserve original name; sanitize to prevent traversal
+          cb(null, path.basename(file.originalname));
+        },
+      }),
+      limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB
+    }),
+  )
+  async uploadFile(
+    @UploadedFile() file: any,
+    @Query('projectId') projectId?: string,
+    @Query('batchName') batchName?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+
+    // Build the public URL that task-management will store as fileUrl
+    let relativePath = path.basename(file.originalname);
+    if (projectId) {
+      const sanitizedBatch = batchName ? batchName.replace(/[^a-zA-Z0-9-_]/g, '_') : undefined;
+      relativePath = sanitizedBatch
+        ? `${path.basename(projectId)}/${sanitizedBatch}/${path.basename(file.originalname)}`
+        : `${path.basename(projectId)}/${path.basename(file.originalname)}`;
+    }
+
+    const fileUrl = `/api/v1/media/${relativePath}`;
+
+    return {
+      fileUrl,
+      fileName: file.originalname,
+      fileSize: file.size,
+      mimeType: file.mimetype,
+    };
+  }
 
   /**
    * Serve files from project/batch folders (for directory scan mode)

@@ -1,10 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Annotation, AnnotationVersion, Task, Assignment } from '@app/common';
-import { SubmitAnnotationDto, UpdateAnnotationDto, CompareAnnotationsDto } from './dto/annotation.dto';
-import { KafkaService } from '../kafka/kafka.service';
-import { QualityCheckService } from '../quality-check/quality-check.service';
+import { Annotation, AnnotationVersion, Task } from '@app/common';
+import { UpdateAnnotationDto, CompareAnnotationsDto } from './dto/annotation.dto';
+import { KafkaService } from '@app/infrastructure';
 
 @Injectable()
 export class AnnotationService {
@@ -17,102 +16,8 @@ export class AnnotationService {
     private readonly versionRepo: Repository<AnnotationVersion>,
     @InjectRepository(Task)
     private readonly taskRepo: Repository<Task>,
-    @InjectRepository(Assignment)
-    private readonly assignmentRepo: Repository<Assignment>,
     private readonly kafkaService: KafkaService,
-    private readonly qualityCheckService: QualityCheckService,
   ) {}
-
-  async submit(taskId: string, userId: string, dto: SubmitAnnotationDto) {
-    const task = await this.taskRepo.findOne({ where: { id: taskId } });
-    if (!task) throw new NotFoundException(`Task ${taskId} not found`);
-
-    const assignment = await this.assignmentRepo.findOne({
-      where: { id: dto.assignmentId, taskId },
-    });
-    if (!assignment) throw new NotFoundException('Assignment not found for this task');
-
-    // Check if a draft already exists for this annotator on this task
-    const existing = await this.annotationRepo.findOne({
-      where: { taskId, userId, assignmentId: dto.assignmentId },
-    });
-
-    let annotation: Annotation;
-    if (existing) {
-      // Snapshot previous version before overwriting
-      await this.versionRepo.save(
-        this.versionRepo.create({
-          annotationId: existing.id,
-          version: existing.version,
-          annotationData: existing.annotationData,
-          confidenceScore: existing.confidenceScore,
-          changedBy: userId,
-          changeReason: dto.isDraft ? 'Draft update' : 'Submitted revision',
-        }),
-      );
-
-      existing.annotationData = dto.annotationData;
-      existing.confidenceScore = dto.confidenceScore;
-      existing.timeSpent = dto.timeSpent;
-      existing.isFinal = !dto.isDraft;
-      existing.version = existing.version + 1;
-      if (!dto.isDraft) existing.submittedAt = new Date();
-      if (dto.toolVersion) existing.toolVersion = dto.toolVersion;
-      annotation = await this.annotationRepo.save(existing);
-    } else {
-      annotation = await this.annotationRepo.save(
-        this.annotationRepo.create({
-          taskId,
-          assignmentId: dto.assignmentId,
-          userId,
-          annotationData: dto.annotationData,
-          confidenceScore: dto.confidenceScore,
-          timeSpent: dto.timeSpent,
-          version: 1,
-          isFinal: !dto.isDraft,
-          submittedAt: dto.isDraft ? null : new Date(),
-          toolVersion: dto.toolVersion,
-        }),
-      );
-    }
-
-    if (dto.isDraft) {
-      await this.kafkaService.publishEvent('annotation.draft_saved', {
-        id: annotation.id,
-        taskId,
-        userId,
-      });
-      return { annotationId: annotation.id, taskId, status: 'DRAFT', autoQcTriggered: false };
-    }
-
-    // Publish submission event
-    await this.kafkaService.publishEvent('annotation.submitted', {
-      id: annotation.id,
-      taskId,
-      userId,
-      assignmentId: dto.assignmentId,
-    });
-
-    // Trigger automated quality check pipeline
-    const qcResult = await this.qualityCheckService.runAutomatedPipeline(
-      taskId,
-      annotation.id,
-      task.projectId,
-    );
-
-    return {
-      annotationId: annotation.id,
-      taskId,
-      status: 'SUBMITTED',
-      autoQcTriggered: true,
-      goldComparisonAvailable: qcResult.goldComparisonRan,
-      nextState: qcResult.passed ? 'pendingReview' : 'queued',
-      qcSummary: {
-        passed: qcResult.passed,
-        score: qcResult.score,
-      },
-    };
-  }
 
   async getAnnotations(taskId: string) {
     const annotations = await this.annotationRepo.find({
