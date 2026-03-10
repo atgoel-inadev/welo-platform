@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { KafkaModule, RedisModule, HealthModule } from '@app/infrastructure';
+import { MessagingModule, RedisModule, HealthModule } from '@app/infrastructure';
 import { Notification, User } from '@app/common';
 import { Webhook } from './webhook/webhook.entity';
 import { WebhookDelivery } from './webhook/webhook-delivery.entity';
@@ -39,18 +39,37 @@ import { WebhookModule } from './webhook/webhook.module';
       }),
       inject: [ConfigService],
     }),
-    KafkaModule.forRoot({
-      clientId: 'notification-service',
-      consumerGroupId: 'notification-group',
-      topics: [
-        'notification.send',
-        'task.assigned',
-        'task.completed',
-        'assignment.expired',
-        'batch.completed',
-        'export.completed',
-        'quality_check.failed',
-      ],
+    MessagingModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        provider: configService.get('MESSAGING_PROVIDER', 'kafka') as 'kafka' | 'aws',
+        kafka: {
+          clientId: 'notification-service',
+          consumerGroupId: 'notification-group',
+          topics: [
+            'notification.send',
+            'task.assigned',
+            'task.completed',
+            'assignment.expired',
+            'batch.completed',
+            'export.completed',
+            'quality_check.failed',
+          ],
+        },
+        aws: {
+          region: configService.get('AWS_REGION', 'us-east-1'),
+          topics: [
+            'notification.send',
+            'task.assigned',
+            'task.completed',
+            'assignment.expired',
+            'batch.completed',
+            'export.completed',
+            'quality_check.failed',
+          ],
+        },
+      }),
+      inject: [ConfigService],
     }),
     RedisModule,
     NotificationModule,

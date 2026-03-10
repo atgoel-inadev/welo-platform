@@ -1,9 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task, Project, Assignment } from '@app/common/entities';
 import { TaskStatus, AssignmentStatus, WorkflowStage } from '@app/common/enums';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE } from '@app/infrastructure';
 
 /**
  * State Transition Service
@@ -24,7 +24,8 @@ export class StateTransitionService {
     private projectRepository: Repository<Project>,
     @InjectRepository(Assignment)
     private assignmentRepository: Repository<Assignment>,
-    private kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private messagingService: IMessagingService,
   ) {}
 
   /**
@@ -199,7 +200,7 @@ export class StateTransitionService {
       timestamp: new Date().toISOString(),
     };
 
-    await this.kafkaService.publishEvent('state.transitioned', event);
+    await this.messagingService.publishEvent('state.transitioned', event);
 
     this.logger.log(
       `[Event Published] state.transitioned: ${fromStage.name} → ${toStage?.name || 'COMPLETED'}`

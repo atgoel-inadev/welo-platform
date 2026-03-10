@@ -3,8 +3,11 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from '@app/common';
+import { initTracer, TraceInterceptor } from '@app/infrastructure';
 
 async function bootstrap() {
+  initTracer('workflow-engine', '1.0.0');
+
   const app = await NestFactory.create(AppModule);
 
   // Global prefix
@@ -21,6 +24,9 @@ async function bootstrap() {
 
   // Global exception filter
   app.useGlobalFilters(new AllExceptionsFilter());
+
+  // Global trace interceptor — enriches OTel spans and injects x-trace-id header
+  app.useGlobalInterceptors(new TraceInterceptor());
 
   // CORS
   app.enableCors();

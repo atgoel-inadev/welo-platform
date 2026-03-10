@@ -2,6 +2,10 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Notification, NotificationType, Priority } from '@app/common';
+import { InAppChannel } from '../channels/inapp.channel';
+import { EmailChannel } from '../channels/email.channel';
+import { WebhookChannel } from '../channels/webhook.channel';
+import { NotificationGateway } from '../realtime/notification.gateway';
 
 export interface SendNotificationPayload {
   userId: string;
@@ -11,6 +15,7 @@ export interface SendNotificationPayload {
   priority?: Priority;
   link?: string;
   expiresAt?: Date;
+  metadata?: Record<string, any>;
 }
 
 @Injectable()
@@ -20,6 +25,10 @@ export class NotificationService {
   constructor(
     @InjectRepository(Notification)
     private readonly notificationRepo: Repository<Notification>,
+    private readonly inAppChannel: InAppChannel,
+    private readonly emailChannel: EmailChannel,
+    private readonly webhookChannel: WebhookChannel,
+    private readonly gateway: NotificationGateway,
   ) {}
 
   async send(payload: SendNotificationPayload): Promise<Notification> {
@@ -34,7 +43,23 @@ export class NotificationService {
       expiresAt: payload.expiresAt ?? null,
     });
 
+    // Attach metadata for channels that need project context (e.g. webhook channel)
+    if (payload.metadata) {
+      (notification as any).metadata = payload.metadata;
+    }
+
     const saved = await this.notificationRepo.save(notification);
+
+    // Dispatch to all channels (failures are non-fatal)
+    await Promise.allSettled([
+      this.inAppChannel.send(saved, payload.userId),
+      this.emailChannel.send(saved, payload.userId),
+      this.webhookChannel.send(saved, payload.userId),
+    ]);
+
+    // Real-time WebSocket push
+    this.gateway.emitToUser(payload.userId, saved);
+
     this.logger.debug(`Notification sent to user ${payload.userId}: [${payload.type}] ${payload.title}`);
     return saved;
   }

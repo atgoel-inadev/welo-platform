@@ -3,8 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, In } from 'typeorm';
 import { Batch, Task, Project, Assignment, User, Workflow, ProjectTeamMember } from '@app/common/entities';
 import { BatchStatus, TaskStatus, TaskType, AssignmentStatus, AssignmentMethod, WorkflowStage, UserStatus, WorkflowStatus } from '@app/common/enums';
-import { KafkaService } from '@app/infrastructure';
-import { RedisService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE, RedisService } from '@app/infrastructure';
+import { Inject } from '@nestjs/common';
 import { CreateBatchDto, UpdateBatchDto, AllocateFilesDto, AllocateFolderDto, ScanDirectoryDto, AssignTaskDto, PullNextTaskDto } from '../dto/batch.dto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -34,7 +34,8 @@ export class BatchService {
     @InjectRepository(ProjectTeamMember)
     private teamMemberRepository: Repository<ProjectTeamMember>,
     private dataSource: DataSource,
-    private kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private messagingService: IMessagingService,
     private redis: RedisService,
   ) {}
 
@@ -92,7 +93,7 @@ export class BatchService {
     const savedBatch = await this.batchRepository.save(batch);
 
     // Publish Kafka event
-    await this.kafkaService.publishBatchEvent('created', savedBatch);
+    await this.messagingService.publishBatchEvent('created', savedBatch);
 
     this.logger.log(`Batch created: ${savedBatch.id}`);
     return savedBatch;
@@ -111,7 +112,7 @@ export class BatchService {
     const updatedBatch = await this.batchRepository.save(batch);
 
     // Publish Kafka event
-    await this.kafkaService.publishBatchEvent('updated', updatedBatch);
+    await this.messagingService.publishBatchEvent('updated', updatedBatch);
 
     this.logger.log(`Batch updated: ${batchId}`);
     return updatedBatch;
@@ -178,7 +179,7 @@ export class BatchService {
 
     // Publish Kafka events for each task
     for (const task of savedTasks) {
-      await this.kafkaService.publishTaskEvent('created', task);
+      await this.messagingService.publishTaskEvent('created', task);
     }
 
     this.logger.log(`Allocated ${savedTasks.length} files to batch ${batchId}`);
@@ -341,7 +342,7 @@ export class BatchService {
 
     // Publish Kafka events
     for (const task of savedTasks) {
-      await this.kafkaService.publishTaskEvent('created', task);
+      await this.messagingService.publishTaskEvent('created', task);
     }
 
     this.logger.log(
@@ -854,11 +855,11 @@ export class BatchService {
     await this.taskRepository.save(task);
 
     // Publish Kafka events
-    await this.kafkaService.publishTaskEvent('assigned', task);
-    await this.kafkaService.publishAssignmentEvent('created', savedAssignment);
+    await this.messagingService.publishTaskEvent('assigned', task);
+    await this.messagingService.publishAssignmentEvent('created', savedAssignment);
 
     // Send notification to user
-    await this.kafkaService.publishNotification({
+    await this.messagingService.publishNotification({
       userId: userId,
       type: 'TASK_ASSIGNED',
       title: 'New Task Assigned',
@@ -1077,7 +1078,7 @@ export class BatchService {
     const updatedBatch = await this.batchRepository.save(batch);
 
     // Publish Kafka event
-    await this.kafkaService.publishBatchEvent('completed', updatedBatch);
+    await this.messagingService.publishBatchEvent('completed', updatedBatch);
 
     this.logger.log(`Batch completed: ${batchId}`);
     return updatedBatch;

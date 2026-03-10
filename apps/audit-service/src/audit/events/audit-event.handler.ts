@@ -1,8 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLog, AuditAction } from '@app/common';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE, MessagePayload } from '@app/infrastructure';
 
 type TopicMeta = { action: AuditAction; entityType: string; idField: string };
 
@@ -33,15 +33,16 @@ export class AuditEventHandler implements OnModuleInit {
   constructor(
     @InjectRepository(AuditLog)
     private readonly auditRepo: Repository<AuditLog>,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
   ) {}
 
   async onModuleInit() {
     for (const topic of Object.keys(TOPIC_MAP)) {
-      await this.kafkaService.subscribe(topic, async (kafkaPayload) => {
+      await this.messagingService.subscribe(topic, async (payload: MessagePayload) => {
         try {
-          const payload = JSON.parse(kafkaPayload.message.value.toString());
-          await this.handleEvent(topic, payload);
+          const message = JSON.parse(payload.value.toString());
+          await this.handleEvent(topic, message);
         } catch (err) {
           this.logger.warn(`Failed to process audit event [${topic}]: ${(err as Error).message}`);
         }

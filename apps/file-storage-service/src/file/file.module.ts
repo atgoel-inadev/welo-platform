@@ -6,6 +6,7 @@ import { FileService } from './file.service';
 import { LocalStorageProvider } from '../storage/local-storage.provider';
 import { S3StorageProvider } from '../storage/s3-storage.provider';
 import { STORAGE_PROVIDER } from '../storage/storage.interface';
+import { FileEventPublisher } from '../events/file-event.publisher';
 
 const storageProvider = {
   provide: STORAGE_PROVIDER,
@@ -15,7 +16,7 @@ const storageProvider = {
 @Module({
   imports: [TypeOrmModule.forFeature([FileRecord])],
   controllers: [FileController],
-  providers: [FileService, storageProvider, LocalStorageProvider, S3StorageProvider],
+  providers: [FileService, FileEventPublisher, storageProvider, LocalStorageProvider, S3StorageProvider],
   exports: [FileService],
 })
 export class FileModule {}

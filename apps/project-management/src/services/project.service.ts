@@ -151,8 +151,8 @@ export class ProjectService {
       minimum_quality_score: workflowConfig.minimum_quality_score || 70,
 
       // Legacy support
-      annotatorsPerTask: workflowConfig.annotatorsPerTask || 
-                         workflowConfig.stages?.find(s => s.type === 'annotation')?.annotators_count || 1,
+      annotatorsPerTask: workflowConfig.stages?.find(s => s.type === 'annotation')?.annotators_count ||
+                         workflowConfig.annotatorsPerTask || 1,
       reviewLevels: workflowConfig.review_levels || workflowConfig.reviewLevels || [],
       approvalCriteria: workflowConfig.approvalCriteria || workflowConfig.approval_criteria || defaultConfig.approvalCriteria,
       assignmentRules: workflowConfig.assignmentRules || workflowConfig.assignment_rules || defaultConfig.assignmentRules,
@@ -299,6 +299,10 @@ export class ProjectService {
    * Clone a project
    */
   async cloneProject(projectId: string, data: { newName: string; copyTasks?: boolean }) {
+    if (!data.newName || data.newName.trim() === '') {
+      throw new BadRequestException('New project name is required');
+    }
+
     const originalProject = await this.projectRepository.findOne({
       where: { id: projectId },
       relations: ['customer', 'creator'],
@@ -310,7 +314,7 @@ export class ProjectService {
 
     // Create cloned project
     const clonedProject = this.projectRepository.create({
-      name: data.newName,
+      name: data.newName.trim(),
       customerId: originalProject.customerId,
       description: originalProject.description,
       projectType: originalProject.projectType,

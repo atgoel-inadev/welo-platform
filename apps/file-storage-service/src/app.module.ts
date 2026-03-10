@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { KafkaModule, RedisModule, HealthModule } from '@app/infrastructure';
+import { MessagingModule, RedisModule, HealthModule } from '@app/infrastructure';
 import { FileModule } from './file/file.module';
 import { FileRecord } from './file/file.entity';
 
@@ -31,13 +31,27 @@ import { FileRecord } from './file/file.entity';
       }),
       inject: [ConfigService],
     }),
-    KafkaModule.forRoot({
-      clientId: 'file-storage-service',
-      consumerGroupId: 'file-storage-group',
-      topics: [
-        'file.uploaded',
-        'file.deleted',
-      ],
+    MessagingModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        provider: configService.get('MESSAGING_PROVIDER', 'kafka') as 'kafka' | 'aws',
+        kafka: {
+          clientId: 'file-storage-service',
+          consumerGroupId: 'file-storage-group',
+          topics: [
+            'file.uploaded',
+            'file.deleted',
+          ],
+        },
+        aws: {
+          region: configService.get('AWS_REGION', 'us-east-1'),
+          topics: [
+            'file.uploaded',
+            'file.deleted',
+          ],
+        },
+      }),
+      inject: [ConfigService],
     }),
     RedisModule,
     FileModule,

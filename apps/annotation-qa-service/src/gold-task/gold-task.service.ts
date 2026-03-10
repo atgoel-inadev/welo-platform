@@ -1,10 +1,10 @@
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GoldTask, Annotation } from '@app/common';
 import { CreateGoldTaskDto, UpdateGoldTaskDto, GoldCompareDto } from './dto/gold-task.dto';
 import { GoldComparisonEngine } from './gold-comparison.engine';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE } from '@app/infrastructure';
 
 @Injectable()
 export class GoldTaskService {
@@ -16,7 +16,8 @@ export class GoldTaskService {
     @InjectRepository(Annotation)
     private readonly annotationRepo: Repository<Annotation>,
     private readonly engine: GoldComparisonEngine,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
   ) {}
 
   async create(taskId: string, projectId: string, userId: string, dto: CreateGoldTaskDto) {
@@ -71,7 +72,7 @@ export class GoldTaskService {
       goldTask.tolerance,
     );
 
-    await this.kafkaService.publishEvent('gold_comparison.completed', {
+    await this.messagingService.publishEvent('gold_comparison.completed', {
       id: `gc-${annotation.id}`,
       taskId,
       annotationId: dto.annotationId,

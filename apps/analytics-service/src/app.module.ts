@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { KafkaModule, RedisModule, HealthModule } from '@app/infrastructure';
+import { MessagingModule, RedisModule, HealthModule } from '@app/infrastructure';
 import {
   Task,
   Batch,
@@ -17,6 +17,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { ProductivityModule } from './productivity/productivity.module';
 import { QualityModule } from './quality/quality.module';
 import { ProjectAnalyticsModule } from './project/project-analytics.module';
+import { AnalyticsEventsModule } from './events/analytics-events.module';
 
 @Module({
   imports: [
@@ -55,20 +56,36 @@ import { ProjectAnalyticsModule } from './project/project-analytics.module';
       }),
       inject: [ConfigService],
     }),
-    KafkaModule.forRoot({
-      clientId: 'analytics-service',
-      consumerGroupId: 'analytics-group',
-      topics: [
-        'task.completed',
-        'batch.completed',
-        'quality_check.completed',
-      ],
+    MessagingModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        provider: configService.get('MESSAGING_PROVIDER', 'kafka') as 'kafka' | 'aws',
+        kafka: {
+          clientId: 'analytics-service',
+          consumerGroupId: 'analytics-group',
+          topics: [
+            'task.completed',
+            'batch.completed',
+            'quality_check.completed',
+          ],
+        },
+        aws: {
+          region: configService.get('AWS_REGION', 'us-east-1'),
+          topics: [
+            'task.completed',
+            'batch.completed',
+            'quality_check.completed',
+          ],
+        },
+      }),
+      inject: [ConfigService],
     }),
     RedisModule,
     DashboardModule,
     ProductivityModule,
     QualityModule,
     ProjectAnalyticsModule,
+    AnalyticsEventsModule,
     HealthModule.forRoot({ serviceName: 'analytics-service', version: '1.0.0' }),
   ],
 })

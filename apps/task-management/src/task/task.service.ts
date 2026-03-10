@@ -3,7 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, FindOptionsWhere } from 'typeorm';
 import { Task, Assignment, Annotation, Project, Batch, Workflow, User, Queue, AnnotationResponse } from '@app/common/entities';
 import { TaskStatus, TaskType, AssignmentStatus, AssignmentMethod, WorkflowStage } from '@app/common/enums';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE } from '@app/infrastructure';
+import { Inject } from '@nestjs/common';
 import { TaskRenderingService } from '../services/task-rendering.service';
 import {
   CreateTaskDto,
@@ -41,7 +42,8 @@ export class TaskService {
     private userRepository: Repository<User>,
     @InjectRepository(Queue)
     private queueRepository: Repository<Queue>,
-    private kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private messagingService: IMessagingService,
     private taskRenderingService: TaskRenderingService,
   ) {}
 
@@ -118,7 +120,7 @@ export class TaskService {
     await this.batchRepository.save(batch);
 
     // Publish Kafka event
-    await this.kafkaService.publishTaskEvent('created', savedTask);
+    await this.messagingService.publishTaskEvent('created', savedTask);
 
     this.logger.log(`Task created: ${savedTask.id}`);
     return savedTask;
@@ -273,7 +275,7 @@ export class TaskService {
     const updatedTask = await this.taskRepository.save(task);
 
     // Publish Kafka event
-    await this.kafkaService.publishTaskEvent('updated', updatedTask);
+    await this.messagingService.publishTaskEvent('updated', updatedTask);
 
     this.logger.log(`Task updated: ${taskId}`);
     return updatedTask;
@@ -368,8 +370,8 @@ export class TaskService {
     await this.taskRepository.save(taskToUpdate);
 
     // Publish Kafka events
-    await this.kafkaService.publishTaskEvent('assigned', task);
-    await this.kafkaService.publishNotification({
+    await this.messagingService.publishTaskEvent('assigned', task);
+    await this.messagingService.publishNotification({
       userId: dto.userId,
       type: 'TASK_ASSIGNED',
       title: 'New Task Assigned',
@@ -503,11 +505,11 @@ export class TaskService {
     const updatedTask = await this.taskRepository.save(task);
 
     // Publish Kafka events
-    await this.kafkaService.publishTaskEvent('submitted', updatedTask);
-    await this.kafkaService.publishAnnotationEvent(savedAnnotation);
+    await this.messagingService.publishTaskEvent('submitted', updatedTask);
+    await this.messagingService.publishAnnotationEvent(savedAnnotation);
 
     // Request quality check
-    await this.kafkaService.publishQualityCheckRequest(updatedTask);
+    await this.messagingService.publishQualityCheckRequest(updatedTask);
 
     this.logger.log(`Task ${dto.taskId} submitted by assignment ${dto.assignmentId}`);
     return updatedTask;
@@ -555,7 +557,7 @@ export class TaskService {
     const updatedTask = await this.taskRepository.save(task);
 
     // Publish Kafka event
-    await this.kafkaService.publishTaskEvent('state_changed', {
+    await this.messagingService.publishTaskEvent('state_changed', {
       ...updatedTask,
       oldStatus,
       newStatus: task.status,
@@ -591,7 +593,7 @@ export class TaskService {
     const updatedTask = await this.taskRepository.save(task);
 
     // Publish to workflow engine
-    await this.kafkaService.publishTaskEvent('state_changed', {
+    await this.messagingService.publishTaskEvent('state_changed', {
       ...updatedTask,
       event: dto.event,
       payload: dto.payload,
@@ -772,7 +774,7 @@ export class TaskService {
 
     // CRITICAL: Publish annotation.submitted event for Workflow Engine
     // This triggers state transition processing in workflow-engine service
-    await this.kafkaService.publishAnnotationEvent({
+    await this.messagingService.publishAnnotationEvent({
       id: result.annotationId,
       taskId,
       userId,
@@ -995,8 +997,8 @@ export class TaskService {
     await this.taskRepository.save(task);
 
     try {
-      await this.kafkaService.publishTaskEvent('assigned', task);
-      await this.kafkaService.publishNotification({
+      await this.messagingService.publishTaskEvent('assigned', task);
+      await this.messagingService.publishNotification({
         userId: newUserId,
         type: 'TASK_ASSIGNED',
         title: 'Task Reassigned to You',

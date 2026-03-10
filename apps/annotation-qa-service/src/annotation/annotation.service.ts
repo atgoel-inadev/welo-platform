@@ -1,9 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Annotation, AnnotationVersion, Task } from '@app/common';
 import { UpdateAnnotationDto, CompareAnnotationsDto } from './dto/annotation.dto';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE } from '@app/infrastructure';
 
 @Injectable()
 export class AnnotationService {
@@ -16,7 +16,8 @@ export class AnnotationService {
     private readonly versionRepo: Repository<AnnotationVersion>,
     @InjectRepository(Task)
     private readonly taskRepo: Repository<Task>,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
   ) {}
 
   async getAnnotations(taskId: string) {
@@ -49,7 +50,7 @@ export class AnnotationService {
 
     const updated = await this.annotationRepo.save(annotation);
 
-    await this.kafkaService.publishEvent('annotation.updated', {
+    await this.messagingService.publishEvent('annotation.updated', {
       id: updated.id,
       taskId: updated.taskId,
       userId,

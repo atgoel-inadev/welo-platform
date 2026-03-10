@@ -1,8 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Export, Batch, ExportType, ExportFormat } from '@app/common';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE, MessagePayload } from '@app/infrastructure';
 import { ExportService } from '../export.service';
 
 @Injectable()
@@ -14,14 +14,15 @@ export class ExportEventHandler implements OnModuleInit {
     private readonly exportRepo: Repository<Export>,
     @InjectRepository(Batch)
     private readonly batchRepo: Repository<Batch>,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
     private readonly exportService: ExportService,
   ) {}
 
   async onModuleInit() {
-    await this.kafkaService.subscribe('batch.completed', async (kafkaPayload) => {
-      const payload = JSON.parse(kafkaPayload.message.value.toString());
-      await this.handleBatchCompleted(payload);
+    await this.messagingService.subscribe('batch.completed', async (payload: MessagePayload) => {
+      const message = JSON.parse(payload.value.toString());
+      await this.handleBatchCompleted(message);
     });
 
     this.logger.log('Export event handler initialized');

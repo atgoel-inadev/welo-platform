@@ -13,7 +13,7 @@ import { PluginRunnerService } from './services/plugin-runner.service';
 import { CommentService } from './services/comment.service';
 import { TaskQueueService } from './services/task-queue.service';
 import { AssignmentLockService } from './services/assignment-lock.service';
-import { KafkaModule, RedisModule, HealthModule } from '@app/infrastructure';
+import { MessagingModule, MessagingConfig, RedisModule, HealthModule } from '@app/infrastructure';
 import {
   Workflow,
   WorkflowInstance,
@@ -105,21 +105,45 @@ import {
       PluginSecret,
       PluginExecutionLog,
     ]),
-    KafkaModule.forRoot({
-      clientId: 'task-management-service',
-      consumerGroupId: 'task-management-group',
-      topics: [
-        'task.created',
-        'task.updated',
-        'task.assigned',
-        'task.completed',
-        'task.submitted',
-        'task.state_changed',
-        'annotation.submitted',
-        'quality_check.requested',
-        'notification.send',
-        'state.transitioned', // Workflow Engine event
-      ],
+    MessagingModule.forRootAsync({
+      useFactory: (configService: ConfigService): MessagingConfig => {
+        const provider = configService.get<'kafka' | 'aws'>('MESSAGING_PROVIDER', 'kafka');
+
+        return {
+          provider,
+          kafka: {
+            clientId: configService.get('KAFKA_CLIENT_ID', 'task-management-service'),
+            consumerGroupId: configService.get('KAFKA_CONSUMER_GROUP_ID', 'task-management-group'),
+            brokers: configService.get('KAFKA_BROKERS', 'localhost:9092').split(','),
+            topics: [
+              'task.created',
+              'task.updated',
+              'task.assigned',
+              'task.completed',
+              'task.submitted',
+              'task.state_changed',
+              'annotation.submitted',
+              'quality_check.requested',
+              'notification.send',
+              'state.transitioned',
+            ],
+          },
+          aws: {
+            region: configService.get('AWS_REGION', 'us-east-1'),
+            accountId: configService.get('AWS_ACCOUNT_ID', ''),
+            topicPrefix: configService.get('AWS_TOPIC_PREFIX', 'welo'),
+            queuePrefix: configService.get('AWS_QUEUE_PREFIX', 'welo'),
+            enableFifo: configService.get('AWS_ENABLE_FIFO', 'false') === 'true',
+            ...(configService.get('AWS_ACCESS_KEY_ID') && {
+              credentials: {
+                accessKeyId: configService.get('AWS_ACCESS_KEY_ID')!,
+                secretAccessKey: configService.get('AWS_SECRET_ACCESS_KEY')!,
+              },
+            }),
+          },
+        };
+      },
+      inject: [ConfigService],
     }),
     RedisModule,
     HealthModule.forRoot({ serviceName: 'task-management', version: '1.0.0' }),

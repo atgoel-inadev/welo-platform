@@ -3,7 +3,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AuditInterceptor } from '@app/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { RedisModule, HealthModule, KafkaModule } from '@app/infrastructure';
+import { RedisModule, HealthModule, MessagingModule, MessagingConfig } from '@app/infrastructure';
 import { WorkflowModule } from './workflow/workflow.module';
 import { EventModule } from './event/event.module';
 import { InstanceModule } from './instance/instance.module';
@@ -80,14 +80,38 @@ import {
       inject: [ConfigService],
     }),
     RedisModule,
-    KafkaModule.forRoot({
-      clientId: 'workflow-engine',
-      consumerGroupId: 'workflow-engine-group',
-      topics: [
-        'annotation.submitted',
-        'quality_check.completed',
-        'task.created',
-      ],
+    MessagingModule.forRootAsync({
+      useFactory: (configService: ConfigService): MessagingConfig => {
+        const provider = configService.get<'kafka' | 'aws'>('MESSAGING_PROVIDER', 'kafka');
+
+        return {
+          provider,
+          kafka: {
+            clientId: configService.get('KAFKA_CLIENT_ID', 'workflow-engine'),
+            consumerGroupId: configService.get('KAFKA_CONSUMER_GROUP_ID', 'workflow-engine-group'),
+            brokers: configService.get('KAFKA_BROKERS', 'localhost:9092').split(','),
+            topics: [
+              'annotation.submitted',
+              'quality_check.completed',
+              'task.created',
+            ],
+          },
+          aws: {
+            region: configService.get('AWS_REGION', 'us-east-1'),
+            accountId: configService.get('AWS_ACCOUNT_ID', ''),
+            topicPrefix: configService.get('AWS_TOPIC_PREFIX', 'welo'),
+            queuePrefix: configService.get('AWS_QUEUE_PREFIX', 'welo'),
+            enableFifo: configService.get('AWS_ENABLE_FIFO', 'false') === 'true',
+            ...(configService.get('AWS_ACCESS_KEY_ID') && {
+              credentials: {
+                accessKeyId: configService.get('AWS_ACCESS_KEY_ID')!,
+                secretAccessKey: configService.get('AWS_SECRET_ACCESS_KEY')!,
+              },
+            }),
+          },
+        };
+      },
+      inject: [ConfigService],
     }),
     WorkflowModule,
     EventModule,

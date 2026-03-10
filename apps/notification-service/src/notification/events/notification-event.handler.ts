@@ -1,7 +1,7 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { NotificationService } from '../notification.service';
 import { WebhookService } from '../../webhook/webhook.service';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE, MessagePayload } from '@app/infrastructure';
 import { NotificationType, Priority } from '@app/common';
 
 @Injectable()
@@ -11,52 +11,53 @@ export class NotificationEventHandler implements OnModuleInit {
   constructor(
     private readonly notificationService: NotificationService,
     private readonly webhookService: WebhookService,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
   ) {}
 
   async onModuleInit() {
-    await this.kafkaService.subscribe('notification.send', async (kafkaPayload) => {
-      const payload = JSON.parse(kafkaPayload.message.value.toString());
-      await this.handleDirectNotification(payload);
+    await this.messagingService.subscribe('notification.send', async (payload: MessagePayload) => {
+      const message = JSON.parse(payload.value.toString());
+      await this.handleDirectNotification(message);
     });
 
-    await this.kafkaService.subscribe('task.assigned', async (kafkaPayload) => {
-      const payload = JSON.parse(kafkaPayload.message.value.toString());
+    await this.messagingService.subscribe('task.assigned', async (payload: MessagePayload) => {
+      const message = JSON.parse(payload.value.toString());
       await Promise.all([
-        this.handleTaskAssigned(payload),
-        this.dispatchWebhook(payload.projectId, 'task.assigned', payload),
+        this.handleTaskAssigned(message),
+        this.dispatchWebhook(message.projectId, 'task.assigned', message),
       ]);
     });
 
-    await this.kafkaService.subscribe('assignment.expired', async (kafkaPayload) => {
-      const payload = JSON.parse(kafkaPayload.message.value.toString());
+    await this.messagingService.subscribe('assignment.expired', async (payload: MessagePayload) => {
+      const message = JSON.parse(payload.value.toString());
       await Promise.all([
-        this.handleAssignmentExpired(payload),
-        this.dispatchWebhook(payload.projectId, 'assignment.expired', payload),
+        this.handleAssignmentExpired(message),
+        this.dispatchWebhook(message.projectId, 'assignment.expired', message),
       ]);
     });
 
-    await this.kafkaService.subscribe('batch.completed', async (kafkaPayload) => {
-      const payload = JSON.parse(kafkaPayload.message.value.toString());
+    await this.messagingService.subscribe('batch.completed', async (payload: MessagePayload) => {
+      const message = JSON.parse(payload.value.toString());
       await Promise.all([
-        this.handleBatchCompleted(payload),
-        this.dispatchWebhook(payload.projectId, 'batch.completed', payload),
+        this.handleBatchCompleted(message),
+        this.dispatchWebhook(message.projectId, 'batch.completed', message),
       ]);
     });
 
-    await this.kafkaService.subscribe('export.completed', async (kafkaPayload) => {
-      const payload = JSON.parse(kafkaPayload.message.value.toString());
+    await this.messagingService.subscribe('export.completed', async (payload: MessagePayload) => {
+      const message = JSON.parse(payload.value.toString());
       await Promise.all([
-        this.handleExportCompleted(payload),
-        this.dispatchWebhook(payload.projectId, 'export.completed', payload),
+        this.handleExportCompleted(message),
+        this.dispatchWebhook(message.projectId, 'export.completed', message),
       ]);
     });
 
-    await this.kafkaService.subscribe('quality_check.failed', async (kafkaPayload) => {
-      const payload = JSON.parse(kafkaPayload.message.value.toString());
+    await this.messagingService.subscribe('quality_check.failed', async (payload: MessagePayload) => {
+      const message = JSON.parse(payload.value.toString());
       await Promise.all([
-        this.handleQualityCheckFailed(payload),
-        this.dispatchWebhook(payload.projectId, 'quality_check.failed', payload),
+        this.handleQualityCheckFailed(message),
+        this.dispatchWebhook(message.projectId, 'quality_check.failed', message),
       ]);
     });
 

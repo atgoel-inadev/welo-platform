@@ -1,8 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Annotation, Task } from '@app/common';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE, MessagePayload } from '@app/infrastructure';
 import { QualityCheckService } from '../quality-check/quality-check.service';
 
 /**
@@ -18,14 +18,15 @@ export class AnnotationEventHandler implements OnModuleInit {
     private readonly annotationRepo: Repository<Annotation>,
     @InjectRepository(Task)
     private readonly taskRepo: Repository<Task>,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
     private readonly qualityCheckService: QualityCheckService,
   ) {}
 
   async onModuleInit() {
-    await this.kafkaService.subscribe('annotation.submitted', async (payload) => {
+    await this.messagingService.subscribe('annotation.submitted', async (payload: MessagePayload) => {
       try {
-        const message = JSON.parse(payload.message.value.toString());
+        const message = JSON.parse(payload.value.toString());
         await this.handleAnnotationSubmitted(message);
       } catch (error) {
         this.logger.error(`Failed to process annotation.submitted event: ${error.message}`, error.stack);

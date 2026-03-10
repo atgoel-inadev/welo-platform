@@ -2,18 +2,22 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ProjectManagementModule } from './project-management.module';
+import { initTracer, TraceInterceptor } from '@app/infrastructure';
 
 async function bootstrap() {
+  initTracer('project-management', '1.0.0');
+
   const app = await NestFactory.create(ProjectManagementModule);
-  
+
   // Enable CORS
   app.enableCors();
-  
+
   // Global prefix
   app.setGlobalPrefix('api/v1');
 
   // Validation
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  app.useGlobalInterceptors(new TraceInterceptor());
 
   // Swagger / OpenAPI
   const config = new DocumentBuilder()

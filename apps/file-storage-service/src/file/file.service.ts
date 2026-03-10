@@ -1,9 +1,9 @@
 import { Injectable, Logger, NotFoundException, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { KafkaService } from '@app/infrastructure';
 import { FileRecord, FileStatus } from './file.entity';
 import { IStorageProvider, STORAGE_PROVIDER } from '../storage/storage.interface';
+import { FileEventPublisher } from '../events/file-event.publisher';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
@@ -26,7 +26,7 @@ export class FileService {
     private readonly fileRepo: Repository<FileRecord>,
     @Inject(STORAGE_PROVIDER)
     private readonly storage: IStorageProvider,
-    private readonly kafkaService: KafkaService,
+    private readonly events: FileEventPublisher,
   ) {}
 
   async uploadDirect(
@@ -55,17 +55,7 @@ export class FileService {
     });
 
     const saved = await this.fileRepo.save(record);
-
-    await this.kafkaService.publish('file.uploaded', {
-      fileId: saved.id,
-      fileUrl: saved.fileUrl,
-      fileKey: saved.storageKey,
-      projectId,
-      batchId,
-      fileType: saved.fileType,
-      originalName,
-      uploadedBy,
-    });
+    await this.events.publishFileUploaded(saved);
 
     this.logger.log(`File uploaded: ${saved.id} (${originalName})`);
     return saved;
@@ -102,24 +92,14 @@ export class FileService {
     return { uploadUrl, fileId: saved.id, fileKey: storageKey, expiresAt };
   }
 
-  async confirmUpload(fileId: string): Promise<FileRecord> {
+  async confirmUpload(fileId: string, clientReportedSize?: number): Promise<FileRecord> {
     const record = await this.getFile(fileId);
     const fileUrl = await this.storage.presignedGetUrl(record.storageKey, 3600 * 24 * 365);
     record.fileUrl = fileUrl;
     record.status = FileStatus.READY;
+    if (clientReportedSize != null) record.fileSize = clientReportedSize;
     const saved = await this.fileRepo.save(record);
-
-    await this.kafkaService.publish('file.uploaded', {
-      fileId: saved.id,
-      fileUrl: saved.fileUrl,
-      fileKey: saved.storageKey,
-      projectId: saved.projectId,
-      batchId: saved.batchId,
-      fileType: saved.fileType,
-      originalName: saved.originalName,
-      uploadedBy: saved.uploadedBy,
-    });
-
+    await this.events.publishFileUploaded(saved);
     return saved;
   }
 
@@ -158,14 +138,7 @@ export class FileService {
     await this.storage.delete(record.storageKey);
     record.status = FileStatus.DELETED;
     await this.fileRepo.save(record);
-
-    await this.kafkaService.publish('file.deleted', {
-      fileId: record.id,
-      projectId: record.projectId,
-      batchId: record.batchId,
-      deletedBy: requestedBy,
-    });
-
+    await this.events.publishFileDeleted(record, requestedBy);
     this.logger.log(`File deleted: ${id} by ${requestedBy}`);
   }
 }

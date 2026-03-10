@@ -19,6 +19,11 @@ Authorization: Bearer <access_token>
 | Task Management | 3003 | `http://localhost:3003/api/v1` |
 | Project Management | 3004 | `http://localhost:3004/api/v1` |
 | Annotation QA Service | 3005 | `http://localhost:3005/api/v1` |
+| File Storage Service | 3006 | `http://localhost:3006/api/v1` |
+| Export Service | 3007 | `http://localhost:3007/api/v1` |
+| Notification Service | 3008 | `http://localhost:3008/api/v1` |
+| Analytics Service | 3009 | `http://localhost:3009/api/v1` |
+| Audit Service | 3010 | `http://localhost:3010/api/v1` |
 
 In production, all services sit behind a reverse proxy/API gateway at a unified domain. Swagger UI is available at `http://localhost:{port}/api` for each service.
 
@@ -817,6 +822,65 @@ POST /batches/pull-next-task
 
 ---
 
+## 10b. Queues
+**Service**: Project Management (port 3004)
+**Tag**: `queues`
+
+Queue entities configure how tasks are distributed and prioritized per project. Live queue size is read from Redis.
+
+### 10b.1 Create Queue
+```
+POST /queues
+```
+**Request:**
+```json
+{
+  "projectId": "uuid",
+  "name": "Annotation Queue",
+  "queueType": "ANNOTATION",
+  "priorityRules": { "priorityField": "priority", "sortOrder": "DESC", "filters": [] },
+  "assignmentRules": { "autoAssign": true, "capacityLimits": {}, "skillRequirements": [], "loadBalancing": {} }
+}
+```
+
+### 10b.2 List Queues
+```
+GET /queues?projectId=uuid
+```
+
+### 10b.3 Get Queue
+```
+GET /queues/{id}
+```
+
+### 10b.4 Update Queue
+```
+PATCH /queues/{id}
+```
+
+### 10b.5 Pause Queue
+```
+POST /queues/{id}/pause
+```
+Sets `status = PAUSED`. Auto-assignment stops until resumed.
+
+### 10b.6 Resume Queue
+```
+POST /queues/{id}/resume
+```
+Sets `status = ACTIVE`.
+
+### 10b.7 Get Queue Size (live, from Redis)
+```
+GET /queues/{id}/size
+```
+**Response:**
+```json
+{ "size": 47, "projectId": "uuid", "queueType": "ANNOTATION" }
+```
+
+---
+
 ## 11. Tasks
 **Service**: Task Management (port 3003)
 **Tag**: `tasks`
@@ -950,17 +1014,9 @@ POST /tasks/{id}/submit
 ```
 
 ### 11.11 Send XState Event to Task
-```
-POST /tasks/{id}/events
-```
+> ⚠️ **Removed from Task Management (A3 drift fix).** Direct XState event submission from the public API has been removed from port 3003. All XState state transitions must go through the **Workflow Engine** (port 3001) at `POST /tasks/{taskId}/events` (see section 22.1). Task Management's internal `sendEvent` is private and used only for status sync.
 
-**Request:**
-```json
-{
-  "event": "SUBMIT",
-  "payload": { "annotationData": { ... } }
-}
-```
+---
 
 ### 11.12 Get Task Statistics
 ```
@@ -1209,36 +1265,12 @@ DELETE /tasks/{id}/comments/{commentId}?userId=uuid
 **Service**: Annotation QA Service (port 3005)
 **Tag**: `annotations`
 
+> **Annotation submission** (creating the final `Annotation` record + publishing `annotation.submitted` Kafka event) is handled by **Task Management** (port 3003) at `POST /tasks/{id}/submit` (section 11.10). Annotation QA Service owns read, update, history, and comparison endpoints only (A2 drift fix).
+
 ### 15.1 Submit Annotation
-```
-POST /tasks/{taskId}/annotations?userId=uuid
-```
-
-**Request:**
-```json
-{
-  "assignmentId": "uuid",
-  "annotationData": {
-    "labels": [{ "start": 0, "end": 10, "label": "PERSON", "text": "John Smith" }],
-    "entities": [],
-    "relationships": [],
-    "attributes": { "sentiment": "positive" }
-  },
-  "confidenceScore": 0.95,
-  "timeSpent": 285,
-  "isDraft": false
-}
-```
-
-**Response:**
-```json
-{
-  "annotationId": "uuid",
-  "taskId": "uuid",
-  "status": "SUBMITTED",
-  "createdAt": "2026-02-03T10:45:00Z"
-}
-```
+> ⚠️ **Removed from Annotation QA Service (A2 drift fix).** Use `POST /tasks/{id}/submit` on Task Management (port 3003, section 11.10) to create the final `Annotation` record.
+>
+> Annotation QA Service now reacts to the `annotation.submitted` Kafka event to trigger automated quality checks rather than exposing a duplicate submit endpoint.
 
 ### 15.2 List Annotations for Task
 ```
@@ -2031,6 +2063,11 @@ GET http://localhost:{port}/health
 | Task Management | 3003 | `http://localhost:3003/health` |
 | Project Management | 3004 | `http://localhost:3004/health` |
 | Annotation QA Service | 3005 | `http://localhost:3005/health` |
+| File Storage Service | 3006 | `http://localhost:3006/health` |
+| Export Service | 3007 | `http://localhost:3007/health` |
+| Notification Service | 3008 | `http://localhost:3008/health` |
+| Analytics Service | 3009 | `http://localhost:3009/health` |
+| Audit Service | 3010 | `http://localhost:3010/health` |
 
 **Response:**
 ```json
@@ -2046,6 +2083,453 @@ Each service exposes interactive API documentation at:
 ```
 GET http://localhost:{port}/api
 ```
+
+---
+
+---
+
+## 26. File Storage Service
+**Service**: File Storage Service (port 3006)
+**Tag**: `files`
+
+Handles file upload, metadata management, presigned URL generation (S3 in production, local disk in dev), and file lifecycle. Publishes `file.uploaded` and `file.deleted` Kafka events.
+
+### 26.1 Direct Upload (Dev / Multipart)
+```
+POST /files/upload
+Content-Type: multipart/form-data
+```
+**Form Fields:** `file` (binary), `projectId` (UUID), `batchId` (UUID, optional)
+
+**Response:**
+```json
+{
+  "id": "uuid",
+  "originalName": "image_001.jpg",
+  "fileUrl": "http://localhost:3006/api/v1/files/uuid/download",
+  "fileKey": "projects/uuid/batches/uuid/image_001.jpg",
+  "mimeType": "image/jpeg",
+  "fileSize": 204800,
+  "fileType": "IMAGE",
+  "status": "READY",
+  "projectId": "uuid",
+  "batchId": "uuid"
+}
+```
+
+### 26.2 Request Presigned Upload URL (Production / S3)
+```
+POST /files/presigned-url
+```
+**Request:**
+```json
+{
+  "fileName": "image_001.jpg",
+  "mimeType": "image/jpeg",
+  "projectId": "uuid",
+  "batchId": "uuid"
+}
+```
+**Response:**
+```json
+{
+  "uploadUrl": "https://s3.amazonaws.com/welo-files/...?X-Amz-Signature=...",
+  "fileId": "uuid",
+  "fileKey": "projects/uuid/batches/uuid/image_001.jpg",
+  "expiresAt": "2026-02-03T11:30:00Z"
+}
+```
+Client PUTs directly to `uploadUrl`, then calls `/files/{id}/confirm`.
+
+### 26.3 Confirm Upload (after client-side S3 PUT)
+```
+POST /files/{id}/confirm
+```
+**Request:**
+```json
+{ "fileSize": 204800, "etag": "abc123" }
+```
+**Response:** `FileRecord` with `status = READY` and `fileUrl` populated.
+
+### 26.4 Get File Metadata
+```
+GET /files/{id}
+```
+
+### 26.5 List Files
+```
+GET /files?projectId=uuid&batchId=uuid&page=1&limit=50
+```
+
+### 26.6 Get Download URL
+```
+GET /files/{id}/download
+```
+**Response:**
+```json
+{ "downloadUrl": "https://cdn.example.com/..." }
+```
+Returns a presigned S3 GET URL (1-hour TTL in production) or a redirect to the local file URL in dev.
+
+### 26.7 Delete File
+```
+DELETE /files/{id}
+```
+Soft-deletes the `FileRecord` (status → DELETED), removes from storage, publishes `file.deleted`.
+
+---
+
+## 27. Export Service
+**Service**: Export Service (port 3007)
+**Tag**: `exports`
+
+Accepts export requests, runs async jobs to aggregate annotation data, formats output (JSON / JSONL / CSV / COCO / PASCAL_VOC), and stores result in S3 / local disk.
+
+### 27.1 Request Export
+```
+POST /exports
+```
+**Request:**
+```json
+{
+  "batchId": "uuid",
+  "projectId": "uuid",
+  "exportType": "FULL",
+  "format": "COCO",
+  "requestedBy": "uuid",
+  "filterCriteria": {
+    "taskStatus": ["APPROVED", "SUBMITTED"],
+    "minQualityScore": 80
+  },
+  "configuration": {
+    "includeMetadata": true,
+    "includeQualityMetrics": false,
+    "anonymize": false,
+    "compression": "none"
+  }
+}
+```
+**Response:** `Export` record with `status = PENDING`. Job is queued asynchronously.
+
+`exportType`: `FULL` | `INCREMENTAL` | `FILTERED`
+`format`: `JSON` | `JSONL` | `CSV` | `COCO` | `PASCAL_VOC` | `CUSTOM`
+
+### 27.2 Get Export Status
+```
+GET /exports/{id}
+```
+**Response:**
+```json
+{
+  "id": "uuid",
+  "batchId": "uuid",
+  "projectId": "uuid",
+  "format": "COCO",
+  "status": "COMPLETED",
+  "fileUrl": "https://s3.amazonaws.com/welo-exports/uuid/...",
+  "fileSize": 5242880,
+  "recordCount": 1500,
+  "completedAt": "2026-02-03T11:00:00Z",
+  "expiresAt": "2026-03-05T11:00:00Z"
+}
+```
+
+### 27.3 Get Download URL
+```
+GET /exports/{id}/download
+```
+**Response:** `{ "downloadUrl": "https://..." }` — presigned S3 URL with 1-hour TTL. Only available when `status = COMPLETED`.
+
+### 27.4 List Exports
+```
+GET /exports?projectId=uuid&batchId=uuid&status=COMPLETED&page=1&limit=20
+```
+
+### 27.5 Retry Failed Export
+```
+POST /exports/{id}/retry
+```
+Only valid when `status = FAILED`. Re-queues the export job.
+
+### 27.6 Cancel Export
+```
+DELETE /exports/{id}
+```
+Cancels a `PENDING` export. Idempotent for already-completed exports (returns 204).
+
+---
+
+## 28. Notification Service
+**Service**: Notification Service (port 3008)
+**Tag**: `notifications`, `webhooks`
+
+Persists notifications, dispatches via in-app (DB), email (console in dev / SES/SendGrid in production), and webhook channels. Provides real-time delivery via WebSocket gateway (stub until `@nestjs/websockets` is installed).
+
+### 28.1 List Notifications
+```
+GET /notifications?isRead=false&page=1&limit=20
+```
+User is identified via `x-user-id` header.
+
+**Response:**
+```json
+[
+  {
+    "id": "uuid",
+    "type": "TASK_ASSIGNED",
+    "priority": "HIGH",
+    "title": "New task assigned",
+    "message": "Task img_001.jpg has been assigned to you.",
+    "isRead": false,
+    "createdAt": "2026-02-03T10:00:00Z"
+  }
+]
+```
+
+### 28.2 Mark Notification as Read
+```
+POST /notifications/{id}/read
+```
+
+### 28.3 Mark All as Read
+```
+POST /notifications/read-all
+```
+Header: `x-user-id: uuid`
+
+### 28.4 Delete Notification
+```
+DELETE /notifications/{id}
+```
+
+### 28.5 Get Notification Preferences
+```
+GET /notifications/preferences
+```
+Header: `x-user-id: uuid`
+
+### 28.6 Update Notification Preferences
+```
+PUT /notifications/preferences
+```
+**Request:**
+```json
+{ "email": true, "inApp": true, "webhook": false }
+```
+
+### 28.7 List Webhooks
+```
+GET /webhooks?projectId=uuid
+```
+
+### 28.8 Register Webhook
+```
+POST /webhooks
+```
+**Request:**
+```json
+{
+  "projectId": "uuid",
+  "url": "https://your-system.com/welo-webhook",
+  "secret": "hmac-signing-secret",
+  "events": ["task.assigned", "batch.completed", "export.completed"]
+}
+```
+
+### 28.9 Update Webhook
+```
+PATCH /webhooks/{id}
+```
+
+### 28.10 Delete Webhook
+```
+DELETE /webhooks/{id}
+```
+
+### 28.11 Test Webhook
+```
+POST /webhooks/{id}/test
+```
+Sends a synthetic test payload to the registered URL.
+
+### 28.12 Get Webhook Delivery History
+```
+GET /webhooks/{id}/deliveries
+```
+
+---
+
+## 29. Analytics Service
+**Service**: Analytics Service (port 3009)
+**Tag**: `analytics`
+
+Read-only aggregation service. Queries the shared PostgreSQL database (or read replica in production). Dashboard data cached in Redis with 5-minute TTL, invalidated by Kafka events (`task.completed`, `batch.completed`, `quality_check.completed`).
+
+### 29.1 Dashboard Overview
+```
+GET /analytics/dashboard?projectId=uuid&customerId=uuid&dateFrom=2026-01-01&dateTo=2026-02-03
+```
+**Response:**
+```json
+{
+  "activeProjects": 12,
+  "totalBatches": 48,
+  "totalTasks": 24000,
+  "completedToday": 342,
+  "avgQualityScore": 91.4,
+  "avgThroughputPerHour": 28.5,
+  "topAnnotators": [
+    { "userId": "uuid", "completedToday": 45, "avgQuality": 94.2 }
+  ],
+  "batchProgress": [
+    { "batchId": "uuid", "name": "Batch 001", "completionPercent": 72.4 }
+  ]
+}
+```
+
+### 29.2 Productivity Analytics
+```
+GET /analytics/productivity?userId=uuid&projectId=uuid&dateFrom=2026-01-01&dateTo=2026-02-03
+```
+**Response:**
+```json
+{
+  "tasksCompleted": 215,
+  "avgTimePerTask": 142,
+  "avgQualityScore": 93.1,
+  "dailySeries": [
+    { "date": "2026-02-03", "completed": 42, "avgTime": 138 }
+  ]
+}
+```
+
+### 29.3 Capacity Planning
+```
+GET /analytics/capacity?projectId=uuid
+```
+**Response:**
+```json
+{
+  "totalAnnotators": 15,
+  "activeToday": 11,
+  "avgConcurrentTasks": 3.2,
+  "estimatedCompletionDate": "2026-03-15"
+}
+```
+
+### 29.4 Quality Trends
+```
+GET /analytics/quality-trends?projectId=uuid&batchId=uuid&dateFrom=2026-01-01&dateTo=2026-02-03
+```
+**Response:**
+```json
+{
+  "overallScore": 89.7,
+  "trendSeries": [
+    { "date": "2026-02-03", "avgScore": 91.2, "passRate": 94.5 }
+  ],
+  "issueBreakdown": [
+    { "category": "MISSING_LABEL", "count": 42, "severity": "MEDIUM" }
+  ],
+  "interAnnotatorAgreement": 0.87
+}
+```
+
+### 29.5 Quality by Annotator
+```
+GET /analytics/quality/by-annotator?projectId=uuid&dateFrom=2026-01-01&dateTo=2026-02-03
+```
+**Response:**
+```json
+[
+  { "userId": "uuid", "avgScore": 93.5, "submitCount": 210, "rejectRate": 0.03 }
+]
+```
+
+### 29.6 Project Progress
+```
+GET /analytics/projects/{id}/progress
+```
+**Response:**
+```json
+{
+  "batchBreakdown": [
+    { "batchId": "uuid", "name": "Batch 001", "totalTasks": 500, "completed": 362, "inProgress": 58, "queued": 80 }
+  ],
+  "workflowStageDistribution": { "ANNOTATION": 58, "REVIEW": 20, "APPROVED": 362 },
+  "projectedEndDate": "2026-03-01"
+}
+```
+
+### 29.7 State Transition History
+```
+GET /analytics/transitions?entityType=TASK&entityId=uuid&dateFrom=2026-01-01&dateTo=2026-02-03
+```
+Delegates to `state_transitions` table. Useful for auditing task lifecycle.
+
+---
+
+## 30. Audit Service
+**Service**: Audit Service (port 3010)
+**Tag**: `audit`, `compliance`
+
+Consumes all major Kafka events and writes enriched `AuditLog` records. Exposes audit trail queries and GDPR compliance endpoints. Complements the synchronous `AuditInterceptor` (which captures HTTP-level CRUD in real time) with richer business-level domain event context.
+
+### 30.1 Query Audit Logs
+```
+GET /audit-logs?entityType=TASK&entityId=uuid&userId=uuid&action=CREATE&dateFrom=2026-01-01&dateTo=2026-02-03&page=1&limit=50
+```
+**Query Parameters:**
+- `entityType` — TASK, BATCH, ANNOTATION, EXPORT, etc.
+- `entityId` — filter to a specific entity UUID
+- `userId` — filter by acting user
+- `action` — CREATE, UPDATE, DELETE, ASSIGN, SUBMIT, APPROVE, REJECT, EXPORT
+- `dateFrom` / `dateTo` — ISO 8601 date range
+
+### 30.2 Get Entity Audit Trail
+```
+GET /audit-logs/entity/{type}/{id}
+```
+Returns the complete audit trail for a specific entity (e.g., all events on task `uuid`).
+
+### 30.3 Get User Audit Trail
+```
+GET /audit-logs/user/{userId}?dateFrom=2026-01-01&dateTo=2026-02-03
+```
+
+### 30.4 Compliance Report
+```
+GET /compliance/report?projectId=uuid&dateFrom=2026-01-01&dateTo=2026-02-03
+```
+**Response:**
+```json
+{
+  "totalActions": 18420,
+  "actionBreakdown": { "CREATE": 5200, "UPDATE": 9100, "DELETE": 320 },
+  "userActionSummary": [
+    { "userId": "uuid", "totalActions": 842, "topActions": ["SUBMIT", "UPDATE"] }
+  ],
+  "dataAccessEvents": 1240,
+  "exportEvents": 18,
+  "piiAccessLog": []
+}
+```
+
+### 30.5 Data Retention Status
+```
+GET /compliance/data-retention
+```
+Returns tables with retention policy status, oldest record dates, and recommended archival actions.
+
+### 30.6 GDPR Right to Erasure
+```
+POST /compliance/gdpr/right-to-erasure
+```
+**Request:** `{ "userId": "uuid" }`
+
+Anonymizes `userId` to `"ANONYMIZED"` in all `audit_logs` records for the specified user.
+
+**Response:** `{ "anonymizedCount": 842 }`
 
 ---
 
@@ -2070,6 +2554,94 @@ GET http://localhost:{port}/api
 
 ---
 
+## 31. Observability & Distributed Tracing
+
+All 10 microservices are instrumented with **OpenTelemetry** (CNCF standard). Traces are exported via OTLP HTTP to **Jaeger** (development) or any OTLP-compatible backend (production).
+
+### Architecture
+
+```
+Client → Service A → Service B → Kafka → Service C
+           ↓              ↓                    ↓
+       [OTel SDK]     [OTel SDK]           [OTel SDK]
+           ↓              ↓                    ↓
+         OTLP HTTP → Jaeger All-in-One (port 4318)
+                           ↓
+                     Jaeger UI :16686
+```
+
+### Propagation
+
+| Channel | Header / Mechanism | Standard |
+|---------|-------------------|----------|
+| HTTP (sync) | `traceparent`, `tracestate` | W3C TraceContext |
+| HTTP (sync) | `baggage` | W3C Baggage |
+| Kafka (async) | Message headers (`traceparent`, `tracestate`) | W3C TraceContext injected by `KafkaService.publish()` |
+
+### Response Headers
+
+Every HTTP response from every service includes:
+
+| Header | Description |
+|--------|-------------|
+| `x-trace-id` | 128-bit hex trace ID (W3C format) |
+| `x-span-id` | 64-bit hex span ID |
+
+Use these to correlate a client-side request to a trace in Jaeger.
+
+### Jaeger UI
+
+| Environment | URL |
+|-------------|-----|
+| Local development | `http://localhost:16686` |
+| Docker Compose | `http://jaeger:16686` (internal) |
+
+### Log Correlation
+
+Every `LoggingInterceptor` log line includes `traceId` and `spanId` fields:
+```
+GET /api/v1/tasks 200 - 45ms | traceId=4bf92f3577b34da6 spanId=00f067aa0ba902b7
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | OTLP HTTP exporter base URL |
+| `NODE_ENV` | `development` | Affects span processor: `SimpleSpanProcessor` (dev) vs `BatchSpanProcessor` (prod) |
+
+### Auto-Instrumented Libraries
+
+| Library | Spans Created |
+|---------|--------------|
+| `@nestjs/platform-express` / `http` | Server spans for every HTTP request |
+| `pg` | DB query spans (SQL text, rows affected) |
+| `ioredis` | Redis command spans |
+| `kafkajs` | Producer/consumer spans (topic, partition, offset) |
+| `nestjs-core` | Controller/guard/interceptor lifecycle spans |
+
+### Manual Spans
+
+Services can create custom spans using `getTracer()` from `@app/infrastructure`:
+
+```typescript
+import { getTracer } from '@app/infrastructure';
+
+const tracer = getTracer('my-service');
+const span = tracer.startSpan('process-batch');
+try {
+  // ... work ...
+  span.setStatus({ code: SpanStatusCode.OK });
+} catch (err) {
+  span.recordException(err);
+  span.setStatus({ code: SpanStatusCode.ERROR });
+} finally {
+  span.end();
+}
+```
+
+---
+
 ## Rate Limiting
 
 Rate limiting is not enforced at the application layer in the current implementation. It is expected to be configured at the reverse proxy / API gateway level in production.
@@ -2091,5 +2663,12 @@ Rate limiting is not enforced at the application layer in the current implementa
    - Guards and actions execute server-side inside the Workflow Engine service.
    - The Actor model (`workflow-instances`) supports hierarchical batch-level orchestration with child task actors.
 7. **Plugin System**: Plugins run before annotation/review submission (`ON_BLUR` / `ON_SUBMIT`). A `HARD_BLOCK` plugin failure prevents submission; `SOFT_WARN` shows a warning but allows submission; `ADVISORY` is informational only.
-8. **Media Files**: Served by Project Management (port 3004) at `/api/v1/media/{projectId}/{batchName}/{filename}`. Files are stored in the container at `/app/media/`.
-9. **Mock Auth (Development)**: In development, user data is sourced from `apps/auth-service/src/auth/mock-users.json`. No external identity provider is required.
+8. **Media Files (Legacy Dev)**: Static files can be served by Project Management (port 3004) at `/api/v1/media/{projectId}/{batchName}/{filename}`. In production, use **File Storage Service** (port 3006) for all file upload and retrieval operations.
+9. **File Storage Service (Production)**: Files are uploaded via `POST /files/upload` (direct multipart) or via the presigned URL flow (`POST /files/presigned-url` → client PUT → `POST /files/{id}/confirm`). Storage backend is local disk in dev (`STORAGE_TYPE=local`) and AWS S3 in production (`STORAGE_TYPE=s3`).
+10. **Export Service**: Export jobs are processed asynchronously. Poll `GET /exports/{id}` for status. Files expire 30 days after creation (`expiresAt`). Supported formats: JSON, JSONL, CSV, COCO, PASCAL_VOC.
+11. **Notification Channels**: In-app notifications are always persisted. Email (SES/SendGrid) is active in production (`EMAIL_PROVIDER=ses|sendgrid`). Dev mode uses `EMAIL_PROVIDER=console` (logs to stdout). WebSocket real-time delivery is available via `ws://localhost:3008/notifications` namespace (requires `@nestjs/websockets` package installed).
+12. **Analytics Caching**: Dashboard and quality metrics are cached in Redis with a 5-minute TTL per project. Caches are invalidated on `task.completed`, `batch.completed`, and `quality_check.completed` Kafka events.
+13. **Audit Logging**: Two complementary mechanisms: (a) `AuditInterceptor` in each service writes synchronously on HTTP POST/PATCH/PUT/DELETE; (b) Audit Service consumes all Kafka domain events asynchronously for richer business-level context. Both write to the `audit_logs` table.
+14. **Kafka Event Envelope**: All Kafka publishes via `KafkaService.publishEvent()` are wrapped in a standard `KafkaEventEnvelope<T>` (`eventId`, `eventType`, `timestamp`, `version: "1.0"`, `source`, optional `correlationId`, `payload`). Import `createKafkaEvent()` from `@app/common` for manual envelope construction.
+15. **Mock Auth (Development)**: In development, user data is sourced from `apps/auth-service/src/auth/mock-users.json`. No external identity provider is required.
+16. **OpenTelemetry (OTel)**: All services initialize the OTel SDK via `initTracer(serviceName)` as the *first* statement in `bootstrap()` — before `NestFactory.create()` — so auto-instrumentation patches `http`, `pg`, `ioredis`, and `kafkajs` at module load time. The SDK exports OTLP HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://localhost:4318`). W3C `traceparent` headers are propagated on both synchronous HTTP calls and asynchronous Kafka messages, enabling end-to-end trace stitching across service boundaries. See §31 for full details.

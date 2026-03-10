@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import { trace } from '@opentelemetry/api';
 import { AuditLog } from '../entities/audit-log.entity';
 import { AuditAction } from '../enums';
 
@@ -92,8 +93,12 @@ export class LoggingInterceptor implements NestInterceptor {
       tap(() => {
         const response = context.switchToHttp().getResponse();
         const delay = Date.now() - now;
+        const span = trace.getActiveSpan();
+        const spanContext = span?.spanContext();
+        const traceId = spanContext?.traceId ?? '-';
+        const spanId = spanContext?.spanId ?? '-';
         this.logger.log(
-          `${method} ${url} ${response.statusCode} - ${delay}ms`,
+          `${method} ${url} ${response.statusCode} - ${delay}ms | traceId=${traceId} spanId=${spanId}`,
         );
       }),
     );

@@ -3,8 +3,11 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from '@app/common';
+import { initTracer, TraceInterceptor } from '@app/infrastructure';
 
 async function bootstrap() {
+  initTracer('auth-service', '1.0.0');
+
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api/v1');
@@ -18,6 +21,7 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new TraceInterceptor());
 
   app.enableCors();
 

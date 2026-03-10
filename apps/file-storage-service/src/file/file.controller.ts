@@ -1,11 +1,12 @@
 import {
-  Controller, Get, Post, Delete, Param, Query, Headers, Res,
+  Controller, Get, Post, Delete, Param, Query, Body, Headers,
   UseInterceptors, UploadedFile, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Response } from 'express';
 import { FileService } from './file.service';
+import { PresignedUrlDto } from './dto/presigned-url.dto';
+import { ConfirmUploadDto } from './dto/confirm-upload.dto';
 
 @ApiTags('files')
 @ApiBearerAuth()
@@ -80,23 +81,40 @@ export class FileController {
 
   @Post('presigned-url')
   @ApiOperation({ summary: 'Request a presigned S3 PUT URL for client-side upload (production)' })
-  @ApiResponse({ status: 201, description: 'Presigned URL returned' })
+  @ApiResponse({
+    status: 201,
+    description: 'Presigned URL returned',
+    schema: {
+      example: {
+        uploadUrl: 'https://s3.amazonaws.com/...',
+        fileId: 'uuid',
+        fileKey: 'projectId/root/uuid.jpg',
+        expiresAt: '2026-03-07T12:00:00.000Z',
+      },
+    },
+  })
   async requestPresignedUrl(
-    @Query('fileName') fileName: string,
-    @Query('mimeType') mimeType: string,
-    @Query('projectId') projectId: string,
-    @Query('batchId') batchId?: string,
+    @Body() dto: PresignedUrlDto,
     @Headers('x-user-id') uploadedBy?: string,
   ) {
-    return this.fileService.requestPresignedUrl({ fileName, mimeType, projectId, batchId, uploadedBy });
+    return this.fileService.requestPresignedUrl({
+      fileName: dto.fileName,
+      mimeType: dto.mimeType,
+      projectId: dto.projectId,
+      batchId: dto.batchId,
+      uploadedBy,
+    });
   }
 
   @Post(':id/confirm')
   @ApiOperation({ summary: 'Confirm upload complete after client-side S3 PUT' })
   @ApiResponse({ status: 200, description: 'File record confirmed as READY' })
   @ApiResponse({ status: 404, description: 'File not found' })
-  async confirmUpload(@Param('id') id: string) {
-    return this.fileService.confirmUpload(id);
+  async confirmUpload(
+    @Param('id') id: string,
+    @Body() dto: ConfirmUploadDto,
+  ) {
+    return this.fileService.confirmUpload(id, dto.fileSize);
   }
 
   @Delete(':id')

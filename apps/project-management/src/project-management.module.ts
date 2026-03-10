@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { KafkaModule, RedisModule, HealthModule } from '@app/infrastructure';
+import { MessagingModule, MessagingConfig, RedisModule, HealthModule } from '@app/infrastructure';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuditInterceptor } from '@app/common';
 import { ProjectController } from './controllers/project.controller';
 import { BatchController } from './controllers/batch.controller';
@@ -101,21 +102,46 @@ import {
       PluginExecutionLog,
       Queue,
     ]),
-    KafkaModule.forRoot({
-      clientId: 'project-management-service',
-      consumerGroupId: 'project-management-group',
-      topics: [
-        'batch.created',
-        'batch.updated',
-        'batch.completed',
-        'task.created',
-        'task.assigned',
-        'task.updated',
-        'task.completed',
-        'assignment.created',
-        'assignment.expired',
-        'notification.send',
-      ],
+    ConfigModule.forRoot({ isGlobal: true }),
+    MessagingModule.forRootAsync({
+      useFactory: (configService: ConfigService): MessagingConfig => {
+        const provider = configService.get<'kafka' | 'aws'>('MESSAGING_PROVIDER', 'kafka');
+
+        return {
+          provider,
+          kafka: {
+            clientId: configService.get('KAFKA_CLIENT_ID', 'project-management-service'),
+            consumerGroupId: configService.get('KAFKA_CONSUMER_GROUP_ID', 'project-management-group'),
+            brokers: configService.get('KAFKA_BROKERS', 'localhost:9092').split(','),
+            topics: [
+              'batch.created',
+              'batch.updated',
+              'batch.completed',
+              'task.created',
+              'task.assigned',
+              'task.updated',
+              'task.completed',
+              'assignment.created',
+              'assignment.expired',
+              'notification.send',
+            ],
+          },
+          aws: {
+            region: configService.get('AWS_REGION', 'us-east-1'),
+            accountId: configService.get('AWS_ACCOUNT_ID', ''),
+            topicPrefix: configService.get('AWS_TOPIC_PREFIX', 'welo'),
+            queuePrefix: configService.get('AWS_QUEUE_PREFIX', 'welo'),
+            enableFifo: configService.get('AWS_ENABLE_FIFO', 'false') === 'true',
+            ...(configService.get('AWS_ACCESS_KEY_ID') && {
+              credentials: {
+                accessKeyId: configService.get('AWS_ACCESS_KEY_ID')!,
+                secretAccessKey: configService.get('AWS_SECRET_ACCESS_KEY')!,
+              },
+            }),
+          },
+        };
+      },
+      inject: [ConfigService],
     }),
     RedisModule,
     HealthModule.forRoot({ serviceName: 'project-management', version: '1.0.0' }),

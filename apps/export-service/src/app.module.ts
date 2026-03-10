@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { KafkaModule, RedisModule, HealthModule } from '@app/infrastructure';
+import { MessagingModule, RedisModule, HealthModule } from '@app/infrastructure';
 import {
   Export,
   Task,
@@ -47,14 +47,29 @@ import { ExportModule } from './export/export.module';
       }),
       inject: [ConfigService],
     }),
-    KafkaModule.forRoot({
-      clientId: 'export-service',
-      consumerGroupId: 'export-group',
-      topics: [
-        'batch.completed',
-        'export.completed',
-        'export.failed',
-      ],
+    MessagingModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        provider: configService.get('MESSAGING_PROVIDER', 'kafka') as 'kafka' | 'aws',
+        kafka: {
+          clientId: 'export-service',
+          consumerGroupId: 'export-group',
+          topics: [
+            'batch.completed',
+            'export.completed',
+            'export.failed',
+          ],
+        },
+        aws: {
+          region: configService.get('AWS_REGION', 'us-east-1'),
+          topics: [
+            'batch.completed',
+            'export.completed',
+            'export.failed',
+          ],
+        },
+      }),
+      inject: [ConfigService],
     }),
     RedisModule,
     ExportModule,

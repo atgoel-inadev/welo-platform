@@ -1,0 +1,4655 @@
+openapi: 3.0.3
+
+info:
+  title: Welo Data Annotation Platform API
+  description: |
+    RESTful API for the Welo Data Annotation Platform — a microservices monorepo.
+    Each service runs independently on its own port. All services share the prefix `/api/v1`
+    and accept/return JSON.
+
+    ## Authentication
+    All protected endpoints require a JWT Bearer token:
+    ```
+    Authorization: Bearer <access_token>
+    ```
+
+    ## Microservice Ports
+    | Service | Port |
+    |---------|------|
+    | Workflow Engine | 3001 |
+    | Auth Service | 3002 |
+    | Task Management | 3003 |
+    | Project Management | 3004 |
+    | Annotation QA Service | 3005 |
+    | File Storage Service | 3006 |
+    | Export Service | 3007 |
+    | Notification Service | 3008 |
+    | Analytics Service | 3009 |
+    | Audit Service | 3010 |
+
+    In production all services sit behind a reverse proxy / API gateway.
+    Swagger UI is available at `http://localhost:{port}/api` for each service.
+  version: 1.0.0
+  contact:
+    name: Welo Platform Team
+
+servers:
+  - url: http://localhost:3001/api/v1
+    description: Workflow Engine (local)
+  - url: http://localhost:3002/api/v1
+    description: Auth Service (local)
+  - url: http://localhost:3003/api/v1
+    description: Task Management (local)
+  - url: http://localhost:3004/api/v1
+    description: Project Management (local)
+  - url: http://localhost:3005/api/v1
+    description: Annotation QA Service (local)
+  - url: http://localhost:3006/api/v1
+    description: File Storage Service (local)
+  - url: http://localhost:3007/api/v1
+    description: Export Service (local)
+  - url: http://localhost:3008/api/v1
+    description: Notification Service (local)
+  - url: http://localhost:3009/api/v1
+    description: Analytics Service (local)
+  - url: http://localhost:3010/api/v1
+    description: Audit Service (local)
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: auth
+    description: "Auth Service (port 3002) — login, registration, token refresh, user management"
+  - name: workflows
+    description: "Workflow Engine (port 3001) — workflow definitions and lifecycle"
+  - name: workflow-instances
+    description: "Workflow Engine (port 3001) — running XState workflow instances"
+  - name: projects
+    description: "Project Management (port 3004) — projects, configuration, team"
+  - name: batches
+    description: "Project Management (port 3004) — task batches within projects"
+  - name: tasks
+    description: "Task Management (port 3003) — annotation tasks, assignments, comments"
+  - name: annotations
+    description: "Annotation QA Service (port 3005) — annotation read/update"
+  - name: reviews
+    description: "Annotation QA Service (port 3005) — reviewer decisions"
+  - name: quality-checks
+    description: "Annotation QA Service (port 3005) — manual and automated QC"
+  - name: files
+    description: "File Storage Service (port 3006) — file upload and management"
+  - name: exports
+    description: "Export Service (port 3007) — data export jobs"
+  - name: notifications
+    description: "Notification Service (port 3008) — in-app notifications"
+  - name: webhooks
+    description: "Notification Service (port 3008) — outbound webhook registrations"
+  - name: analytics
+    description: "Analytics Service (port 3009) — dashboard, productivity, capacity"
+  - name: audit-logs
+    description: "Audit Service (port 3010) — immutable audit trail"
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+
+  # =========================================================================
+  # AUTH SERVICE  (port 3002)
+  # =========================================================================
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: User login
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginDto'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: User registration
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDto'
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh access token
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenDto'
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: User logout
+      operationId: logout
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Get current user profile
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: User profile retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/profile:
+    patch:
+      tags: [auth]
+      summary: Update current user profile
+      operationId: updateProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileDto'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /auth/password:
+    patch:
+      tags: [auth]
+      summary: Change password
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordDto'
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+
+  /auth/session:
+    get:
+      tags: [auth]
+      summary: Validate session and get user info
+      operationId: validateSession
+      responses:
+        '200':
+          description: Session is valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      valid:
+                        type: boolean
+                        example: true
+                      user:
+                        $ref: '#/components/schemas/User'
+
+  /auth/users:
+    get:
+      tags: [auth]
+      summary: List all users
+      operationId: listUsers
+      parameters:
+        - name: role
+          in: query
+          schema:
+            $ref: '#/components/schemas/UserRole'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/UserStatus'
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Users list retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUsers'
+    post:
+      tags: [auth]
+      summary: Create a new user (admin only)
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserDto'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /auth/users/{id}:
+    get:
+      tags: [auth]
+      summary: Get user by ID
+      operationId: getUser
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: User retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [auth]
+      summary: Update user details
+      operationId: updateUser
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserDto'
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [auth]
+      summary: Delete a user
+      operationId: deleteUser
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # WORKFLOW ENGINE  (port 3001)
+  # =========================================================================
+
+  /workflows:
+    post:
+      tags: [workflows]
+      summary: Create a new workflow
+      operationId: createWorkflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkflowDto'
+      responses:
+        '201':
+          description: Workflow created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowResponse'
+    get:
+      tags: [workflows]
+      summary: List all workflows
+      operationId: listWorkflows
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/WorkflowStatus'
+        - name: isTemplate
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Workflows retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Workflow'
+
+  /workflows/{id}:
+    get:
+      tags: [workflows]
+      summary: Get workflow by ID
+      operationId: getWorkflow
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Workflow retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [workflows]
+      summary: Update a workflow
+      operationId: updateWorkflow
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkflowDto'
+      responses:
+        '200':
+          description: Workflow updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowResponse'
+    delete:
+      tags: [workflows]
+      summary: Delete a workflow
+      operationId: deleteWorkflow
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Workflow deleted successfully
+
+  /workflows/{id}/validate:
+    post:
+      tags: [workflows]
+      summary: Validate workflow definition
+      operationId: validateWorkflow
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      isValid:
+                        type: boolean
+                      errors:
+                        type: array
+                        items:
+                          type: string
+                      warnings:
+                        type: array
+                        items:
+                          type: string
+
+  /workflows/{id}/simulate:
+    post:
+      tags: [workflows]
+      summary: Simulate workflow execution
+      operationId: simulateWorkflow
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulateWorkflowDto'
+      responses:
+        '200':
+          description: Simulation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+
+  /workflows/{id}/visualization:
+    get:
+      tags: [workflows]
+      summary: Get workflow visualization data
+      operationId: getWorkflowVisualization
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Visualization data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      workflowId:
+                        type: string
+                        format: uuid
+                      visualizationConfig:
+                        type: object
+                        additionalProperties: true
+                      xstateDefinition:
+                        type: object
+                        additionalProperties: true
+                      message:
+                        type: string
+
+  # Workflow Instances
+
+  /workflow-instances:
+    post:
+      tags: [workflow-instances]
+      summary: Create a workflow instance
+      operationId: createWorkflowInstance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInstanceDto'
+      responses:
+        '201':
+          description: Instance created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResponse'
+
+  /workflow-instances/{id}:
+    get:
+      tags: [workflow-instances]
+      summary: Get workflow instance
+      operationId: getWorkflowInstance
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Instance details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResponse'
+
+  /workflow-instances/{id}/events:
+    post:
+      tags: [workflow-instances]
+      summary: Send event to workflow instance
+      operationId: sendWorkflowEvent
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendEventDto'
+      responses:
+        '200':
+          description: Event processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResponse'
+
+  /workflow-instances/{id}/pause:
+    post:
+      tags: [workflow-instances]
+      summary: Pause workflow instance
+      operationId: pauseWorkflowInstance
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Instance paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResponse'
+
+  /workflow-instances/{id}/resume:
+    post:
+      tags: [workflow-instances]
+      summary: Resume workflow instance
+      operationId: resumeWorkflowInstance
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Instance resumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResponse'
+
+  /workflow-instances/{id}/stop:
+    post:
+      tags: [workflow-instances]
+      summary: Stop workflow instance
+      operationId: stopWorkflowInstance
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Instance stopped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResponse'
+
+  /workflow-instances/{id}/snapshot:
+    get:
+      tags: [workflow-instances]
+      summary: Get workflow instance snapshot
+      operationId: getWorkflowSnapshot
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Instance snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+
+  /workflow-instances/{id}/restore:
+    post:
+      tags: [workflow-instances]
+      summary: Restore workflow instance from snapshot
+      operationId: restoreWorkflowInstance
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                snapshotId:
+                  type: string
+      responses:
+        '200':
+          description: Instance restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResponse'
+
+  /workflow-instances/{id}/actors:
+    get:
+      tags: [workflow-instances]
+      summary: Get child actors of workflow instance
+      operationId: getWorkflowActors
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Child actors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+
+  # =========================================================================
+  # PROJECT MANAGEMENT  (port 3004)
+  # =========================================================================
+
+  /projects:
+    get:
+      tags: [projects]
+      summary: List all projects
+      operationId: listProjects
+      parameters:
+        - name: customerId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ProjectStatus'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Projects retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProjects'
+    post:
+      tags: [projects]
+      summary: Create a new project
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectDto'
+      responses:
+        '201':
+          description: Project created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+
+  /projects/{id}:
+    get:
+      tags: [projects]
+      summary: Get project by ID
+      operationId: getProject
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Project retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [projects]
+      summary: Update project
+      operationId: updateProject
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectDto'
+      responses:
+        '200':
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [projects]
+      summary: Delete project (soft delete)
+      operationId: deleteProject
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Project deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/status:
+    patch:
+      tags: [projects]
+      summary: Update project status
+      operationId: updateProjectStatus
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  $ref: '#/components/schemas/ProjectStatus'
+      responses:
+        '200':
+          description: Project status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+
+  /projects/{id}/clone:
+    post:
+      tags: [projects]
+      summary: Clone an existing project
+      operationId: cloneProject
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newName]
+              properties:
+                newName:
+                  type: string
+                  example: Cloned Project
+                copyTasks:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Project cloned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+
+  /projects/{id}/statistics:
+    get:
+      tags: [projects]
+      summary: Get project statistics
+      operationId: getProjectStatistics
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Statistics retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectStatistics'
+
+  /projects/{id}/annotation-questions:
+    get:
+      tags: [projects]
+      summary: Get annotation questions for a project
+      operationId: getAnnotationQuestions
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Annotation questions retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AnnotationQuestion'
+    post:
+      tags: [projects]
+      summary: Add annotation questions to project
+      operationId: addAnnotationQuestions
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [questions]
+              properties:
+                questions:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AnnotationQuestion'
+      responses:
+        '201':
+          description: Questions added successfully
+
+  /projects/{id}/annotation-questions/{questionId}:
+    patch:
+      tags: [projects]
+      summary: Update a specific annotation question
+      operationId: updateAnnotationQuestion
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: questionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Question updated
+    delete:
+      tags: [projects]
+      summary: Delete an annotation question
+      operationId: deleteAnnotationQuestion
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: questionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Question deleted
+
+  /projects/{id}/workflow-configuration:
+    get:
+      tags: [projects]
+      summary: Get workflow configuration for project
+      operationId: getWorkflowConfiguration
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Workflow configuration retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowConfiguration'
+    post:
+      tags: [projects]
+      summary: Configure workflow for project
+      operationId: configureWorkflow
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigureWorkflowDto'
+      responses:
+        '201':
+          description: Workflow configured
+
+  /projects/{id}/workflow-configuration/annotators-per-task:
+    patch:
+      tags: [projects]
+      summary: Update annotators per task count
+      operationId: updateAnnotatorsPerTask
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [count]
+              properties:
+                count:
+                  type: integer
+                  example: 3
+      responses:
+        '200':
+          description: Annotators per task updated
+
+  /projects/{id}/workflow-configuration/review-levels:
+    post:
+      tags: [projects]
+      summary: Add a review level to workflow
+      operationId: addReviewLevel
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '201':
+          description: Review level added
+
+  /projects/{id}/workflow-configuration/review-levels/{level}:
+    delete:
+      tags: [projects]
+      summary: Remove a review level from workflow
+      operationId: removeReviewLevel
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: level
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Review level removed
+
+  /projects/{id}/supported-file-types:
+    get:
+      tags: [projects]
+      summary: Get supported file types for a project
+      operationId: getSupportedFileTypes
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: File types retrieved
+    post:
+      tags: [projects]
+      summary: Set supported file types for a project
+      operationId: setSupportedFileTypes
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fileTypes:
+                  type: array
+                  items:
+                    type: string
+                  example: [CSV, TXT, IMAGE]
+      responses:
+        '200':
+          description: File types updated
+
+  /projects/{id}/team:
+    get:
+      tags: [projects]
+      summary: Get all team members for a project
+      operationId: getProjectTeam
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Team members retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProjectTeamMember'
+    post:
+      tags: [projects]
+      summary: Assign a user to the project team
+      operationId: assignUserToProject
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignUserToProjectDto'
+      responses:
+        '201':
+          description: User assigned to project
+
+  /projects/{id}/team/{userId}:
+    patch:
+      tags: [projects]
+      summary: Update team member (quota, active status)
+      operationId: updateTeamMember
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quota:
+                  type: integer
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Team member updated
+    delete:
+      tags: [projects]
+      summary: Remove user from project team
+      operationId: removeUserFromProject
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User removed from project
+
+  /projects/{id}/plugins:
+    get:
+      tags: [projects]
+      summary: List all plugins for a project
+      operationId: listPlugins
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Plugins retrieved
+    post:
+      tags: [projects]
+      summary: Create a plugin for a project
+      operationId: createPlugin
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PluginDto'
+      responses:
+        '201':
+          description: Plugin created
+
+  /projects/{id}/plugins/{pluginId}:
+    patch:
+      tags: [projects]
+      summary: Update a plugin
+      operationId: updatePlugin
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: pluginId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PluginDto'
+      responses:
+        '200':
+          description: Plugin updated
+    delete:
+      tags: [projects]
+      summary: Delete a plugin
+      operationId: deletePlugin
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: pluginId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Plugin deleted
+
+  /projects/{id}/plugins/{pluginId}/deploy:
+    post:
+      tags: [projects]
+      summary: Deploy a plugin
+      operationId: deployPlugin
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: pluginId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Plugin deployed
+
+  /projects/{id}/plugins/{pluginId}/toggle:
+    post:
+      tags: [projects]
+      summary: Enable or disable a plugin
+      operationId: togglePlugin
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: pluginId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Plugin toggled
+
+  /projects/{id}/secrets:
+    get:
+      tags: [projects]
+      summary: List all secrets for a project (values masked)
+      operationId: listSecrets
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Secrets retrieved
+    post:
+      tags: [projects]
+      summary: Create a secret for a project
+      operationId: createSecret
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, value]
+              properties:
+                name:
+                  type: string
+                  example: API_KEY
+                value:
+                  type: string
+                  example: sk-...
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Secret created
+
+  /projects/{id}/secrets/{name}:
+    delete:
+      tags: [projects]
+      summary: Delete a secret
+      operationId: deleteSecret
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Secret deleted
+
+  # Batches
+
+  /batches:
+    get:
+      tags: [batches]
+      summary: List all batches
+      operationId: listBatches
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Batches retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Batch'
+    post:
+      tags: [batches]
+      summary: Create a new batch
+      operationId: createBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBatchDto'
+      responses:
+        '201':
+          description: Batch created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResponse'
+
+  /batches/assign-task:
+    post:
+      tags: [batches]
+      summary: Assign a specific task to a user
+      operationId: assignBatchTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId, userId]
+              properties:
+                taskId:
+                  type: string
+                  format: uuid
+                userId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Task assigned
+
+  /batches/pull-next-task:
+    post:
+      tags: [batches]
+      summary: Pull the next available task for a user
+      operationId: pullNextTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, projectId]
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                projectId:
+                  type: string
+                  format: uuid
+                batchId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Next task returned
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /batches/{id}:
+    get:
+      tags: [batches]
+      summary: Get batch by ID
+      operationId: getBatch
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Batch retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [batches]
+      summary: Update batch
+      operationId: updateBatch
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBatchDto'
+      responses:
+        '200':
+          description: Batch updated
+
+  /batches/{id}/allocate-files:
+    post:
+      tags: [batches]
+      summary: Allocate files to a batch (creates tasks from files)
+      operationId: allocateFiles
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileIds]
+              properties:
+                fileIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '201':
+          description: Files allocated, tasks created
+
+  /batches/{id}/allocate-folder:
+    post:
+      tags: [batches]
+      summary: Allocate files from a folder path to the batch
+      operationId: allocateFolder
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [folderPath]
+              properties:
+                folderPath:
+                  type: string
+      responses:
+        '201':
+          description: Folder files allocated
+
+  /batches/{id}/scan-directory:
+    post:
+      tags: [batches]
+      summary: Scan directory and create tasks for all files (demo mode)
+      operationId: scanDirectory
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                directoryPath:
+                  type: string
+      responses:
+        '200':
+          description: Directory scanned, tasks created
+
+  /batches/{id}/statistics:
+    get:
+      tags: [batches]
+      summary: Get batch statistics
+      operationId: getBatchStatistics
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Batch statistics retrieved
+
+  /batches/{id}/complete:
+    post:
+      tags: [batches]
+      summary: Mark batch as completed
+      operationId: completeBatch
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Batch marked complete
+
+  /batches/{id}/auto-assign:
+    post:
+      tags: [batches]
+      summary: Auto-assign unassigned tasks in batch to eligible annotators
+      operationId: autoAssignBatch
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assignmentMethod:
+                  type: string
+                  enum: [AUTO_ROUND_ROBIN, AUTO_WORKLOAD_BASED, AUTO_SKILL_BASED]
+                  default: AUTO_ROUND_ROBIN
+      responses:
+        '200':
+          description: Tasks auto-assigned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  assignedCount:
+                    type: integer
+
+  # =========================================================================
+  # TASK MANAGEMENT  (port 3003)
+  # =========================================================================
+
+  /tasks:
+    get:
+      tags: [tasks]
+      summary: List tasks with filtering and pagination
+      operationId: listTasks
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: batchId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/TaskStatus'
+        - name: assignedUserId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTasks'
+    post:
+      tags: [tasks]
+      summary: Create a new task
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskDto'
+      responses:
+        '201':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/bulk:
+    post:
+      tags: [tasks]
+      summary: Create multiple tasks in bulk
+      operationId: createTasksBulk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tasks]
+              properties:
+                tasks:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/CreateTaskDto'
+      responses:
+        '201':
+          description: Tasks created successfully
+
+  /tasks/next:
+    post:
+      tags: [tasks]
+      summary: Get next available task for user (FIFO queue)
+      operationId: getNextTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, projectId]
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                projectId:
+                  type: string
+                  format: uuid
+                workflowStage:
+                  type: string
+      responses:
+        '200':
+          description: Next task retrieved and assigned
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/next-for-stage:
+    get:
+      tags: [tasks]
+      summary: Get next available task for user in specific stage
+      operationId: getNextTaskForStage
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stageId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Next task retrieved
+
+  /tasks/bulk-action:
+    post:
+      tags: [tasks]
+      summary: Perform bulk action on multiple tasks
+      operationId: bulkTaskAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskIds, action]
+              properties:
+                taskIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                action:
+                  type: string
+                  enum: [ASSIGN, UNASSIGN, STATUS_UPDATE, DELETE]
+                payload:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Bulk action completed
+
+  /tasks/plugins/test:
+    post:
+      tags: [tasks]
+      summary: Test a plugin inline without saving (dry-run)
+      operationId: testPluginInline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId]
+              properties:
+                projectId:
+                  type: string
+                  format: uuid
+                pluginType:
+                  type: string
+                pluginConfig:
+                  type: object
+                  additionalProperties: true
+                testInput:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Plugin test executed
+
+  /tasks/analytics/time:
+    get:
+      tags: [tasks]
+      summary: Get time analytics for annotators and reviewers
+      operationId: getTaskTimeAnalytics
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Time analytics retrieved successfully
+
+  /tasks/{id}:
+    get:
+      tags: [tasks]
+      summary: Get task by ID
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Task retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [tasks]
+      summary: Update a task
+      operationId: updateTask
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskDto'
+      responses:
+        '200':
+          description: Task updated successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [tasks]
+      summary: Delete a task (soft delete)
+      operationId: deleteTask
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Task deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/assign:
+    post:
+      tags: [tasks]
+      summary: Assign task to a user
+      operationId: assignTask
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                workflowStage:
+                  type: string
+      responses:
+        '201':
+          description: Task assigned successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /tasks/{id}/submit:
+    post:
+      tags: [tasks]
+      summary: Submit task with annotations
+      operationId: submitTask
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, annotations]
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                annotations:
+                  type: object
+                  additionalProperties: true
+                timeSpentSeconds:
+                  type: integer
+      responses:
+        '200':
+          description: Task submitted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/status:
+    patch:
+      tags: [tasks]
+      summary: Update task status
+      operationId: updateTaskStatus
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/TaskStatus'
+      responses:
+        '200':
+          description: Task status updated successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/statistics:
+    get:
+      tags: [tasks]
+      summary: Get task statistics and metrics
+      operationId: getTaskStatistics
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Task statistics retrieved successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/render-config:
+    get:
+      tags: [tasks]
+      summary: Get task render configuration
+      description: Returns complete configuration for rendering task UI (file viewer + questions + extra widgets)
+      operationId: getTaskRenderConfig
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Render configuration retrieved successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/annotation:
+    post:
+      tags: [tasks]
+      summary: Save annotation response
+      description: Saves annotator responses to annotation questions and extra widget data
+      operationId: saveAnnotation
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                responses:
+                  type: object
+                  additionalProperties: true
+                widgetData:
+                  type: object
+                  additionalProperties: true
+                isDraft:
+                  type: boolean
+      responses:
+        '200':
+          description: Annotation saved successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/review:
+    post:
+      tags: [tasks]
+      summary: Save review decision
+      description: Saves reviewer decision (approve/reject) + quality score + review widget data
+      operationId: saveReview
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [APPROVE, REJECT, REQUEST_REVISION]
+                qualityScore:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                feedback:
+                  type: string
+      responses:
+        '200':
+          description: Review saved successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/annotation-history:
+    get:
+      tags: [tasks]
+      summary: Get task annotation history
+      operationId: getAnnotationHistory
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: History retrieved successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/assignments:
+    get:
+      tags: [tasks]
+      summary: Get all assignments for a task
+      operationId: getTaskAssignments
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Assignments retrieved successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{taskId}/assign-stage:
+    post:
+      tags: [tasks]
+      summary: Assign task to user in specific workflow stage
+      operationId: assignTaskToStage
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, stageId]
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                stageId:
+                  type: string
+                  format: uuid
+                assignmentMethod:
+                  type: string
+      responses:
+        '201':
+          description: Task assigned to stage successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /tasks/{taskId}/increment-rework:
+    post:
+      tags: [tasks]
+      summary: Increment rework count for task in stage
+      operationId: incrementReworkCount
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stageId]
+              properties:
+                stageId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Rework count incremented
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{taskId}/stage-quality-check/{stageId}:
+    get:
+      tags: [tasks]
+      summary: Check if task passes quality gate for stage
+      operationId: checkStageQualityGate
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: qualityScore
+          in: query
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Quality gate check completed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{taskId}/plugins/execute:
+    post:
+      tags: [tasks]
+      summary: Execute a plugin for a question answer (on-blur validation)
+      operationId: executePlugin
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, questionId, answerValue]
+              properties:
+                projectId:
+                  type: string
+                  format: uuid
+                questionId:
+                  type: string
+                  format: uuid
+                answerValue:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Plugin executed successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/reassign:
+    post:
+      tags: [tasks]
+      summary: Reassign task to a different user (PM action)
+      operationId: reassignTask
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newUserId]
+              properties:
+                newUserId:
+                  type: string
+                  format: uuid
+                reason:
+                  type: string
+                workflowStage:
+                  type: string
+      responses:
+        '200':
+          description: Task reassigned successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/unassign:
+    post:
+      tags: [tasks]
+      summary: Unassign task from current user (PM action)
+      operationId: unassignTask
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Task unassigned successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/comments:
+    get:
+      tags: [tasks]
+      summary: List all comments on a task
+      operationId: getTaskComments
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Comments retrieved successfully
+    post:
+      tags: [tasks]
+      summary: Add a comment to a task
+      operationId: addTaskComment
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, content]
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                content:
+                  type: string
+      responses:
+        '201':
+          description: Comment added successfully
+
+  /tasks/{id}/comments/{commentId}/resolve:
+    patch:
+      tags: [tasks]
+      summary: Mark a task comment as resolved
+      operationId: resolveComment
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolvedBy]
+              properties:
+                resolvedBy:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Comment resolved successfully
+
+  /tasks/{id}/comments/{commentId}:
+    delete:
+      tags: [tasks]
+      summary: Delete a task comment (author only)
+      operationId: deleteComment
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Comment deleted
+
+  # =========================================================================
+  # ANNOTATION QA SERVICE  (port 3005)
+  # =========================================================================
+
+  /tasks/{taskId}/annotations:
+    get:
+      tags: [annotations]
+      summary: List all annotations for a task
+      operationId: getAnnotations
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Annotations retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Annotation'
+
+  /tasks/{taskId}/annotations/compare:
+    post:
+      tags: [annotations]
+      summary: Compare multiple annotations (inter-annotator agreement)
+      operationId: compareAnnotations
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [annotationIds]
+              properties:
+                annotationIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: Comparison metrics returned
+
+  /annotations/{annotationId}:
+    patch:
+      tags: [annotations]
+      summary: Update an annotation (creates version snapshot)
+      operationId: updateAnnotation
+      parameters:
+        - name: annotationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Annotation updated
+
+  /annotations/{annotationId}/history:
+    get:
+      tags: [annotations]
+      summary: Get annotation version history
+      operationId: getAnnotationHistory
+      parameters:
+        - name: annotationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Version history retrieved
+
+  /tasks/{taskId}/reviews:
+    get:
+      tags: [reviews]
+      summary: Get all reviews for a task
+      operationId: getTaskReviews
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Reviews returned
+    post:
+      tags: [reviews]
+      summary: Submit reviewer score and decision for a task annotation
+      operationId: submitReview
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: reviewerId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitReviewDto'
+      responses:
+        '201':
+          description: Review submitted, state transition executed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /reviews/{reviewId}:
+    get:
+      tags: [reviews]
+      summary: Get a specific review
+      operationId: getReview
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Review returned
+
+  /tasks/{taskId}/qa-summary:
+    get:
+      tags: [reviews]
+      summary: Get full QA summary for a task (auto QC + review + current state)
+      operationId: getQaSummary
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: QA summary returned
+
+  /tasks/{taskId}/quality-checks:
+    get:
+      tags: [quality-checks]
+      summary: List all quality checks for a task
+      operationId: getTaskQualityChecks
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Quality checks returned
+    post:
+      tags: [quality-checks]
+      summary: Manually create a quality check for a task annotation
+      operationId: createManualQualityCheck
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQualityCheckDto'
+      responses:
+        '201':
+          description: Quality check created
+
+  /quality-checks/{checkId}:
+    get:
+      tags: [quality-checks]
+      summary: Get a specific quality check
+      operationId: getQualityCheck
+      parameters:
+        - name: checkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Quality check returned
+
+  /quality-checks/{checkId}/resolve:
+    post:
+      tags: [quality-checks]
+      summary: Mark a quality check issue as resolved
+      operationId: resolveQualityCheck
+      parameters:
+        - name: checkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolvedBy]
+              properties:
+                resolvedBy:
+                  type: string
+                  format: uuid
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Quality check resolved
+
+  /batches/{batchId}/quality-checks/automated:
+    post:
+      tags: [quality-checks]
+      summary: Run automated QC across a batch (samples by percentage)
+      operationId: runBatchAutomatedQc
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [samplePercentage]
+              properties:
+                samplePercentage:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                  example: 10
+      responses:
+        '200':
+          description: Batch QC results returned
+
+  /projects/{projectId}/quality-metrics:
+    get:
+      tags: [quality-checks]
+      summary: Get aggregate quality metrics for a project
+      operationId: getProjectQualityMetrics
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Quality metrics returned
+
+  /projects/{projectId}/quality-rules:
+    get:
+      tags: [quality-checks]
+      summary: List all quality rules for a project
+      operationId: getQualityRules
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rules returned
+    post:
+      tags: [quality-checks]
+      summary: Create a quality rule for a project
+      operationId: createQualityRule
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQualityRuleDto'
+      responses:
+        '201':
+          description: Rule created
+
+  /quality-rules/{ruleId}:
+    delete:
+      tags: [quality-checks]
+      summary: Deactivate a quality rule
+      operationId: deleteQualityRule
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rule deactivated
+
+  /quality-gates/check:
+    post:
+      tags: [quality-checks]
+      summary: Check quality gate for annotation
+      description: Validates annotation quality score against project threshold and triggers workflow events
+      operationId: checkQualityGate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId, annotationId, stageId]
+              properties:
+                taskId:
+                  type: string
+                  format: uuid
+                annotationId:
+                  type: string
+                  format: uuid
+                stageId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Quality gate check completed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /quality-gates/check-consensus:
+    post:
+      tags: [quality-checks]
+      summary: Check quality gate for consensus annotations
+      description: Aggregates quality scores from multiple annotators and validates against threshold
+      operationId: checkConsensusQualityGate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId, annotationIds, stageId]
+              properties:
+                taskId:
+                  type: string
+                  format: uuid
+                annotationIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                stageId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Consensus quality gate check completed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # FILE STORAGE SERVICE  (port 3006)
+  # =========================================================================
+
+  /files:
+    get:
+      tags: [files]
+      summary: List files for a project/batch
+      operationId: listFiles
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: batchId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Files retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedFiles'
+
+  /files/upload:
+    post:
+      tags: [files]
+      summary: Direct file upload (development / local storage mode)
+      operationId: uploadFile
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: batchId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, projectId]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                projectId:
+                  type: string
+                  format: uuid
+                batchId:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileRecord'
+
+  /files/presigned-url:
+    post:
+      tags: [files]
+      summary: Request a presigned S3 PUT URL for client-side upload (production)
+      operationId: requestPresignedUrl
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignedUrlDto'
+      responses:
+        '201':
+          description: Presigned URL returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                    format: uri
+                  fileId:
+                    type: string
+                    format: uuid
+                  fileKey:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+
+  /files/{id}:
+    get:
+      tags: [files]
+      summary: Get file metadata by ID
+      operationId: getFile
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: File metadata retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileRecord'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [files]
+      summary: Delete a file (soft delete, publishes file.deleted event)
+      operationId: deleteFile
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: File deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /files/{id}/download:
+    get:
+      tags: [files]
+      summary: Get presigned download URL for a file
+      operationId: getFileDownloadUrl
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Download URL returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  downloadUrl:
+                    type: string
+                    format: uri
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /files/{id}/confirm:
+    post:
+      tags: [files]
+      summary: Confirm upload complete after client-side S3 PUT
+      operationId: confirmUpload
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileSize]
+              properties:
+                fileSize:
+                  type: integer
+                  description: File size in bytes
+      responses:
+        '200':
+          description: File record confirmed as READY
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # EXPORT SERVICE  (port 3007)
+  # =========================================================================
+
+  /exports:
+    get:
+      tags: [exports]
+      summary: List exports, optionally filtered by project/batch/status
+      operationId: listExports
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: batchId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ExportStatus'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Exports retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedExports'
+    post:
+      tags: [exports]
+      summary: Request a new export job
+      operationId: createExport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExportDto'
+      responses:
+        '201':
+          description: Export job queued (status=PENDING)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportRecord'
+
+  /exports/{id}:
+    get:
+      tags: [exports]
+      summary: Get export status by ID
+      operationId: getExport
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Export retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportRecord'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [exports]
+      summary: Cancel an export (idempotent for already-completed exports)
+      operationId: cancelExport
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Export cancelled
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /exports/{id}/download:
+    get:
+      tags: [exports]
+      summary: Get download URL for a completed export
+      operationId: getExportDownloadUrl
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Download URL returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  downloadUrl:
+                    type: string
+                    format: uri
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /exports/{id}/retry:
+    post:
+      tags: [exports]
+      summary: Retry a failed export job
+      operationId: retryExport
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Export requeued for processing
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================================
+  # NOTIFICATION SERVICE  (port 3008)
+  # =========================================================================
+
+  /notifications:
+    get:
+      tags: [notifications]
+      summary: List notifications for the current user
+      operationId: listNotifications
+      parameters:
+        - name: isRead
+          in: query
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Notifications retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotifications'
+
+  /notifications/count:
+    get:
+      tags: [notifications]
+      summary: Get unread notification count for the current user
+      operationId: getUnreadCount
+      responses:
+        '200':
+          description: Unread count returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    example: 5
+
+  /notifications/read-all:
+    post:
+      tags: [notifications]
+      summary: Mark all notifications as read for the current user
+      operationId: markAllNotificationsRead
+      responses:
+        '200':
+          description: All notifications marked as read
+
+  /notifications/{id}/read:
+    post:
+      tags: [notifications]
+      summary: Mark a notification as read
+      operationId: markNotificationRead
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Notification marked as read
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /notifications/{id}:
+    delete:
+      tags: [notifications]
+      summary: Delete a notification
+      operationId: deleteNotification
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Notification deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /webhooks:
+    get:
+      tags: [webhooks]
+      summary: List webhooks for a project
+      operationId: listWebhooks
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Webhooks retrieved
+    post:
+      tags: [webhooks]
+      summary: Register a new webhook
+      operationId: createWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookDto'
+      responses:
+        '201':
+          description: Webhook registered
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /webhooks/{id}:
+    patch:
+      tags: [webhooks]
+      summary: Update webhook configuration
+      operationId: updateWebhook
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWebhookDto'
+      responses:
+        '200':
+          description: Webhook updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [webhooks]
+      summary: Delete a webhook
+      operationId: deleteWebhook
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Webhook deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /webhooks/{id}/test:
+    post:
+      tags: [webhooks]
+      summary: Send a test payload to the webhook
+      operationId: testWebhook
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Test delivery result
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /webhooks/{id}/deliveries:
+    get:
+      tags: [webhooks]
+      summary: Get delivery history for a webhook (last 50)
+      operationId: getWebhookDeliveries
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Delivery history retrieved
+
+  # =========================================================================
+  # ANALYTICS SERVICE  (port 3009)
+  # =========================================================================
+
+  /analytics/dashboard:
+    get:
+      tags: [analytics]
+      summary: Get platform dashboard metrics
+      operationId: getDashboard
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: customerId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Dashboard metrics retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardMetrics'
+
+  /analytics/productivity:
+    get:
+      tags: [analytics]
+      summary: Get productivity metrics per user
+      operationId: getProductivity
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: projectId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Productivity metrics retrieved
+
+  /analytics/capacity:
+    get:
+      tags: [analytics]
+      summary: Get annotator capacity and projected completion for a project
+      operationId: getCapacity
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Capacity metrics retrieved
+
+  # =========================================================================
+  # AUDIT SERVICE  (port 3010)
+  # =========================================================================
+
+  /audit-logs:
+    get:
+      tags: [audit-logs]
+      summary: Query audit logs with filtering and pagination
+      operationId: queryAuditLogs
+      parameters:
+        - name: entityType
+          in: query
+          schema:
+            type: string
+            example: TASK
+        - name: entityId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Audit logs retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAuditLogs'
+
+  /audit-logs/stats:
+    get:
+      tags: [audit-logs]
+      summary: Get audit log statistics (action breakdown, entity breakdown, daily series)
+      operationId: getAuditStats
+      parameters:
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Audit statistics retrieved
+
+  /audit-logs/entity/{type}/{id}:
+    get:
+      tags: [audit-logs]
+      summary: Get full audit trail for a specific entity
+      operationId: getEntityAuditTrail
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Entity type e.g. TASK, BATCH, ANNOTATION
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Entity audit trail retrieved
+
+  /audit-logs/user/{userId}:
+    get:
+      tags: [audit-logs]
+      summary: Get all audit actions by a specific user
+      operationId: getUserAuditTrail
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: User audit trail retrieved
+
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from POST /auth/login
+
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Resource UUID
+
+  responses:
+    BadRequest:
+      description: Bad request — validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Unauthorized — missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Conflict — resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+
+    # -------------------------------------------------------------------------
+    # Common / Shared
+    # -------------------------------------------------------------------------
+
+    SuccessMessage:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Operation completed successfully
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: RESOURCE_NOT_FOUND
+            message:
+              type: string
+              example: The requested resource was not found
+            details:
+              type: object
+              additionalProperties: true
+        metadata:
+          type: object
+          properties:
+            timestamp:
+              type: string
+              format: date-time
+            requestId:
+              type: string
+              format: uuid
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 100
+        totalPages:
+          type: integer
+          example: 5
+
+    # -------------------------------------------------------------------------
+    # Auth / Users
+    # -------------------------------------------------------------------------
+
+    UserRole:
+      type: string
+      enum:
+        - ADMIN
+        - PROJECT_MANAGER
+        - ANNOTATOR
+        - REVIEWER
+        - CUSTOMER
+      example: ANNOTATOR
+
+    UserStatus:
+      type: string
+      enum:
+        - ACTIVE
+        - INACTIVE
+        - SUSPENDED
+        - PENDING_VERIFICATION
+      example: ACTIVE
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/User'
+
+    PaginatedUsers:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            users:
+              type: array
+              items:
+                $ref: '#/components/schemas/User'
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    LoginDto:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+
+    RegisterDto:
+      type: object
+      required: [email, password, firstName, lastName, role]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+
+    RefreshTokenDto:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    UpdateProfileDto:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        avatar:
+          type: string
+          format: uri
+
+    ChangePasswordDto:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          format: password
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+
+    CreateUserDto:
+      allOf:
+        - $ref: '#/components/schemas/RegisterDto'
+
+    UpdateUserDto:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+        status:
+          $ref: '#/components/schemas/UserStatus'
+
+    AuthSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+            refreshToken:
+              type: string
+            expiresIn:
+              type: integer
+              description: Seconds until access token expires
+            user:
+              $ref: '#/components/schemas/User'
+
+    # -------------------------------------------------------------------------
+    # Workflows
+    # -------------------------------------------------------------------------
+
+    WorkflowStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, ARCHIVED]
+      example: ACTIVE
+
+    Workflow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/WorkflowStatus'
+        projectId:
+          type: string
+          format: uuid
+        isTemplate:
+          type: boolean
+        xstateDefinition:
+          type: object
+          additionalProperties: true
+        visualizationConfig:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    WorkflowResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Workflow'
+
+    CreateWorkflowDto:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          example: Standard Annotation Workflow
+        description:
+          type: string
+        projectId:
+          type: string
+          format: uuid
+        isTemplate:
+          type: boolean
+          default: false
+        xstateDefinition:
+          type: object
+          additionalProperties: true
+
+    UpdateWorkflowDto:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/WorkflowStatus'
+        xstateDefinition:
+          type: object
+          additionalProperties: true
+
+    SimulateWorkflowDto:
+      type: object
+      properties:
+        initialContext:
+          type: object
+          additionalProperties: true
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              payload:
+                type: object
+                additionalProperties: true
+
+    # Workflow Instances
+
+    InstanceResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            workflowId:
+              type: string
+              format: uuid
+            state:
+              type: string
+            context:
+              type: object
+              additionalProperties: true
+            status:
+              type: string
+              enum: [RUNNING, PAUSED, STOPPED, COMPLETED, ERROR]
+            createdAt:
+              type: string
+              format: date-time
+
+    CreateInstanceDto:
+      type: object
+      required: [workflowId]
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+        context:
+          type: object
+          additionalProperties: true
+        entityId:
+          type: string
+          format: uuid
+          description: ID of the task / project / etc. this instance is for
+
+    SendEventDto:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          example: SUBMIT_ANNOTATION
+        payload:
+          type: object
+          additionalProperties: true
+
+    # -------------------------------------------------------------------------
+    # Projects
+    # -------------------------------------------------------------------------
+
+    ProjectStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, PAUSED, COMPLETED, ARCHIVED]
+      example: ACTIVE
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        customerId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProjectResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/Project'
+
+    PaginatedProjects:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            projects:
+              type: array
+              items:
+                $ref: '#/components/schemas/Project'
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    CreateProjectDto:
+      type: object
+      required: [name, customerId]
+      properties:
+        name:
+          type: string
+          example: Medical Image Annotation Q1
+        description:
+          type: string
+        customerId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+
+    UpdateProjectDto:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+
+    ProjectStatistics:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            totalTasks:
+              type: integer
+            completedTasks:
+              type: integer
+            inProgressTasks:
+              type: integer
+            pendingTasks:
+              type: integer
+            completionRate:
+              type: number
+              format: float
+            averageQualityScore:
+              type: number
+              format: float
+
+    AnnotationQuestion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [TEXT, SINGLE_CHOICE, MULTIPLE_CHOICE, BOUNDING_BOX, POLYGON, RATING, BOOLEAN]
+        label:
+          type: string
+        description:
+          type: string
+        required:
+          type: boolean
+        order:
+          type: integer
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+              label:
+                type: string
+        config:
+          type: object
+          additionalProperties: true
+
+    WorkflowConfiguration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        annotatorsPerTask:
+          type: integer
+          default: 1
+        reviewLevels:
+          type: array
+          items:
+            type: object
+            properties:
+              level:
+                type: integer
+              reviewerRole:
+                type: string
+              qualityThreshold:
+                type: number
+        assignmentRules:
+          type: object
+          additionalProperties: true
+
+    ConfigureWorkflowDto:
+      type: object
+      properties:
+        annotatorsPerTask:
+          type: integer
+        reviewLevels:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        assignmentRules:
+          type: object
+          additionalProperties: true
+
+    ProjectTeamMember:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/UserRole'
+        quota:
+          type: integer
+        isActive:
+          type: boolean
+        assignedAt:
+          type: string
+          format: date-time
+
+    AssignUserToProjectDto:
+      type: object
+      required: [userId, role]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/UserRole'
+        quota:
+          type: integer
+          description: Maximum tasks per day
+
+    PluginDto:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [API, SCRIPT]
+        config:
+          type: object
+          additionalProperties: true
+        isEnabled:
+          type: boolean
+          default: true
+
+    # -------------------------------------------------------------------------
+    # Batches
+    # -------------------------------------------------------------------------
+
+    BatchStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, IN_PROGRESS, COMPLETED, ARCHIVED]
+
+    Batch:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        projectId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/BatchStatus'
+        taskCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    BatchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/Batch'
+
+    CreateBatchDto:
+      type: object
+      required: [name, projectId]
+      properties:
+        name:
+          type: string
+          example: Batch 001 - Medical Images
+        projectId:
+          type: string
+          format: uuid
+        description:
+          type: string
+
+    UpdateBatchDto:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/BatchStatus'
+
+    # -------------------------------------------------------------------------
+    # Tasks
+    # -------------------------------------------------------------------------
+
+    TaskStatus:
+      type: string
+      enum:
+        - QUEUED
+        - ASSIGNED
+        - IN_PROGRESS
+        - SUBMITTED
+        - IN_REVIEW
+        - APPROVED
+        - REJECTED
+        - REWORK
+        - COMPLETED
+        - CANCELLED
+      example: QUEUED
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+        fileId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        assignedUserId:
+          type: string
+          format: uuid
+        workflowInstanceId:
+          type: string
+          format: uuid
+        priority:
+          type: integer
+          default: 0
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TaskResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/Task'
+
+    PaginatedTasks:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            tasks:
+              type: array
+              items:
+                $ref: '#/components/schemas/Task'
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    CreateTaskDto:
+      type: object
+      required: [projectId, batchId]
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+        fileId:
+          type: string
+          format: uuid
+        workflowId:
+          type: string
+          format: uuid
+        priority:
+          type: integer
+          default: 0
+        metadata:
+          type: object
+          additionalProperties: true
+
+    UpdateTaskDto:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        priority:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties: true
+
+    # -------------------------------------------------------------------------
+    # Annotations
+    # -------------------------------------------------------------------------
+
+    Annotation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        annotatorId:
+          type: string
+          format: uuid
+        data:
+          type: object
+          additionalProperties: true
+        qualityScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        version:
+          type: integer
+        submittedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    SubmitReviewDto:
+      type: object
+      required: [decision, score]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVE, REJECT, REQUEST_REVISION]
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+        feedback:
+          type: string
+        annotationId:
+          type: string
+          format: uuid
+
+    CreateQualityCheckDto:
+      type: object
+      required: [annotationId, checkType]
+      properties:
+        annotationId:
+          type: string
+          format: uuid
+        checkType:
+          type: string
+          enum: [MANUAL, AUTOMATED, CONSENSUS]
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              severity:
+                type: string
+                enum: [LOW, MEDIUM, HIGH, CRITICAL]
+              description:
+                type: string
+
+    CreateQualityRuleDto:
+      type: object
+      required: [name, ruleType, threshold]
+      properties:
+        name:
+          type: string
+        ruleType:
+          type: string
+        threshold:
+          type: number
+        config:
+          type: object
+          additionalProperties: true
+
+    # -------------------------------------------------------------------------
+    # Files
+    # -------------------------------------------------------------------------
+
+    FileStatus:
+      type: string
+      enum: [PENDING, UPLOADING, READY, FAILED, DELETED]
+
+    FileRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        mimeType:
+          type: string
+        fileSize:
+          type: integer
+          description: Size in bytes
+        fileKey:
+          type: string
+          description: Storage key / path
+        status:
+          $ref: '#/components/schemas/FileStatus'
+        uploadedBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+
+    PaginatedFiles:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            files:
+              type: array
+              items:
+                $ref: '#/components/schemas/FileRecord'
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    PresignedUrlDto:
+      type: object
+      required: [fileName, mimeType, projectId]
+      properties:
+        fileName:
+          type: string
+          example: image_001.jpg
+        mimeType:
+          type: string
+          example: image/jpeg
+        projectId:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+
+    # -------------------------------------------------------------------------
+    # Exports
+    # -------------------------------------------------------------------------
+
+    ExportStatus:
+      type: string
+      enum: [PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED]
+
+    ExportFormat:
+      type: string
+      enum: [JSON, CSV, COCO, PASCAL_VOC, YOLO, CUSTOM]
+
+    ExportRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+        format:
+          $ref: '#/components/schemas/ExportFormat'
+        status:
+          $ref: '#/components/schemas/ExportStatus'
+        fileUrl:
+          type: string
+          format: uri
+          nullable: true
+        requestedBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    PaginatedExports:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            exports:
+              type: array
+              items:
+                $ref: '#/components/schemas/ExportRecord'
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    CreateExportDto:
+      type: object
+      required: [projectId, format]
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+        format:
+          $ref: '#/components/schemas/ExportFormat'
+        filters:
+          type: object
+          properties:
+            status:
+              $ref: '#/components/schemas/TaskStatus'
+            dateFrom:
+              type: string
+              format: date
+            dateTo:
+              type: string
+              format: date
+        includeRejected:
+          type: boolean
+          default: false
+
+    # -------------------------------------------------------------------------
+    # Notifications
+    # -------------------------------------------------------------------------
+
+    NotificationRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        type:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        isRead:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    PaginatedNotifications:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            notifications:
+              type: array
+              items:
+                $ref: '#/components/schemas/NotificationRecord'
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    CreateWebhookDto:
+      type: object
+      required: [projectId, url, events]
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+          example: https://yourapp.com/webhook
+        events:
+          type: array
+          items:
+            type: string
+          example: [task.completed, annotation.submitted, export.completed]
+        secret:
+          type: string
+          description: HMAC signing secret for payload verification
+        isActive:
+          type: boolean
+          default: true
+
+    UpdateWebhookDto:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+        secret:
+          type: string
+        isActive:
+          type: boolean
+
+    # -------------------------------------------------------------------------
+    # Analytics
+    # -------------------------------------------------------------------------
+
+    DashboardMetrics:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            totalProjects:
+              type: integer
+            activeProjects:
+              type: integer
+            totalTasks:
+              type: integer
+            completedTasks:
+              type: integer
+            totalAnnotators:
+              type: integer
+            averageQualityScore:
+              type: number
+            tasksCompletedToday:
+              type: integer
+            throughputByDay:
+              type: array
+              items:
+                type: object
+                properties:
+                  date:
+                    type: string
+                    format: date
+                  count:
+                    type: integer
+
+    # -------------------------------------------------------------------------
+    # Audit
+    # -------------------------------------------------------------------------
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          example: TASK_SUBMITTED
+        entityType:
+          type: string
+          example: TASK
+        entityId:
+          type: string
+          format: uuid
+        changes:
+          type: object
+          additionalProperties: true
+        ipAddress:
+          type: string
+        userAgent:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PaginatedAuditLogs:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            logs:
+              type: array
+              items:
+                $ref: '#/components/schemas/AuditLog'
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'

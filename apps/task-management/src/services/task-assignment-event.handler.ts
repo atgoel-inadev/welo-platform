@@ -1,9 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task, ProjectTeamMember, Assignment, User } from '@app/common/entities';
 import { AssignmentStatus, WorkflowStage, AssignmentMethod, UserStatus } from '@app/common/enums';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE, MessagePayload } from '@app/infrastructure';
 
 /**
  * Task Assignment Event Handler
@@ -24,7 +24,8 @@ export class TaskAssignmentEventHandler implements OnModuleInit {
     private assignmentRepository: Repository<Assignment>,
     @InjectRepository(ProjectTeamMember)
     private teamMemberRepository: Repository<ProjectTeamMember>,
-    private kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private messagingService: IMessagingService,
   ) {}
 
   async onModuleInit() {
@@ -32,9 +33,9 @@ export class TaskAssignmentEventHandler implements OnModuleInit {
   }
 
   private async subscribeToStateTransitioned() {
-    await this.kafkaService.subscribe('state.transitioned', async (payload) => {
+    await this.messagingService.subscribe('state.transitioned', async (payload: MessagePayload) => {
       try {
-        const message = JSON.parse(payload.message.value.toString());
+        const message = JSON.parse(payload.value.toString());
         this.logger.log(`\n========== TASK ASSIGNMENT START ==========`);
         this.logger.log(`[Event Received] state.transitioned for task ${message.taskId}`);
         this.logger.log(`[Transition] ${message.fromStage?.name} → ${message.toStage?.name || 'COMPLETED'}`);
@@ -121,7 +122,7 @@ export class TaskAssignmentEventHandler implements OnModuleInit {
         this.logger.log(`[Assignment Created] Task ${taskId} → User ${userId} (stage: ${stage.name})`);
 
         // Publish assignment event
-        await this.kafkaService.publishTaskEvent('assigned', {
+        await this.messagingService.publishTaskEvent('assigned', {
           id: taskId,
           userId,
           assignmentId: assignment.id,
@@ -129,7 +130,7 @@ export class TaskAssignmentEventHandler implements OnModuleInit {
         });
 
         // Publish notification
-        await this.kafkaService.publishNotification({
+        await this.messagingService.publishNotification({
           userId,
           type: 'TASK_ASSIGNED',
           title: 'New Task Assigned',

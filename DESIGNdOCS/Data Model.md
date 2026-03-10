@@ -7,15 +7,20 @@ This document defines the core data entities for the Welo Data Annotation Platfo
 
 ## Architecture
 
-The platform is a microservices monorepo with 5 services sharing a common PostgreSQL database schema:
+The platform is a microservices monorepo with 10 services. Core business entities are shared via `@app/common` (libs/common). Service-owned entities are scoped to the service that manages them.
 
 | Service | Port | Responsibilities |
 |---------|------|-----------------|
 | Workflow Engine | 3001 | XState workflow definitions, instances, events, state transitions |
 | Auth Service | 3002 | Authentication, user management (mock JSON store in dev) |
 | Task Management | 3003 | Tasks, assignments, stage-based workflow, plugin execution, comments |
-| Project Management | 3004 | Projects, batches, customers, UI configurations, plugins, secrets, media |
+| Project Management | 3004 | Projects, batches, customers, UI configurations, plugins, secrets, queues, media |
 | Annotation QA Service | 3005 | Annotations, reviews, quality checks, gold tasks |
+| File Storage Service | 3006 | File upload/download, presigned URLs, file metadata (`FileRecord` — service-owned) |
+| Export Service | 3007 | Async export jobs, multi-format output (JSON/JSONL/CSV/COCO/PASCAL_VOC) |
+| Notification Service | 3008 | Notifications, webhooks, real-time WebSocket gateway (`Webhook`, `WebhookDelivery` — service-owned) |
+| Analytics Service | 3009 | Read-only aggregations, dashboard metrics, quality trends, Redis caching |
+| Audit Service | 3010 | Centralized audit log reads, compliance reports, GDPR erasure |
 
 All shared entities extend `BaseEntity` which provides:
 ```
@@ -894,6 +899,90 @@ PluginExecutionLog extends BaseEntity {
 
 ---
 
+## Service-Owned Entities
+
+These entities are NOT in `libs/common`. They are owned by a single service and not directly accessed by other services (cross-service access is via Kafka events or HTTP calls).
+
+### 26. FileRecord
+Owned by **File Storage Service** (port 3006). Stores file upload metadata; actual file bytes are in local disk (`/app/media`) in dev or AWS S3 in production.
+
+**Table:** `files`
+
+```
+FileRecord extends BaseEntity {
+  projectId: UUID (FK → projects.id)
+  batchId: UUID (FK → batches.id, nullable)
+  originalName: String (255)           // "image_001.jpg"
+  storageKey: String                   // S3 key or local relative path
+  fileUrl: Text                        // accessible URL
+  mimeType: String (100)               // "image/jpeg"
+  fileSize: BigInt (bytes)
+  fileType: String (50)                // CSV | IMAGE | VIDEO | AUDIO | PDF | TXT
+  uploadedBy: UUID                     // userId
+  status: Enum [PENDING, READY, VIRUS_DETECTED, DELETED]
+  virusScanResult: String (nullable)
+  thumbnailUrl: Text (nullable)
+  metadata: JSONB (nullable) {
+    width?: Integer
+    height?: Integer
+    duration?: Number                  // seconds for audio/video
+    pageCount?: Integer                // PDF
+  }
+}
+```
+
+**Indexes:** `projectId`, `batchId`, `status`, `uploadedBy`
+
+**Kafka Events Published:**
+- `file.uploaded` — `{ fileId, fileUrl, fileKey, projectId, batchId, fileType, mimeType, fileSize, originalName, uploadedBy }`
+- `file.deleted` — `{ fileId, projectId, batchId, deletedBy }`
+
+---
+
+### 27. Webhook
+Owned by **Notification Service** (port 3008). Configures outbound webhook delivery for project events.
+
+**Table:** `webhooks`
+
+```
+Webhook extends BaseEntity {
+  projectId: UUID (FK → projects.id)
+  url: Text                            // target HTTPS URL
+  secret: String                       // HMAC-SHA256 signing secret (stored hashed)
+  events: JSONB String[]               // e.g. ['task.assigned', 'batch.completed']
+  isActive: Boolean (default: true)
+  failureCount: Integer (default: 0)   // auto-disabled after 5 consecutive failures
+  lastDeliveredAt: Timestamp (nullable)
+}
+```
+
+**Delivery logic:** POST to `url` with `X-Welo-Signature: sha256=<hmac>` header. Retries up to 3 times with exponential backoff (1 s / 5 s / 30 s). After 5 consecutive failures, `isActive` is set to `false` and a system notification is sent to the project manager.
+
+---
+
+### 28. WebhookDelivery
+Owned by **Notification Service** (port 3008). Delivery attempt log per webhook.
+
+**Table:** `webhook_deliveries`
+
+```
+WebhookDelivery extends BaseEntity {
+  webhookId: UUID (FK → webhooks.id)
+  eventType: String                    // e.g. 'task.assigned'
+  payload: JSONB                       // full envelope sent
+  responseStatus: Integer (nullable)   // HTTP status received
+  responseBody: Text (nullable)
+  durationMs: Integer (nullable)
+  success: Boolean
+  attemptNumber: Integer
+  deliveredAt: Timestamp
+}
+```
+
+**Indexes:** `webhookId`, `success`, `deliveredAt`
+
+---
+
 ## Relationships
 
 ### One-to-Many
@@ -938,6 +1027,12 @@ PluginExecutionLog extends BaseEntity {
 - `User` ↔ `Project` (via `ProjectTeamMember`)
 - `Task` ↔ `User` (via `Assignment`)
 
+### Service-Owned Entity Relationships (logical, not enforced by FK across services)
+- `Project` → `FileRecord` (1:N, via `projectId`)
+- `Batch` → `FileRecord` (1:N, via `batchId`)
+- `Project` → `Webhook` (1:N, via `projectId`)
+- `Webhook` → `WebhookDelivery` (1:N, via `webhookId`)
+
 ---
 
 ## Enumerations Reference
@@ -978,6 +1073,7 @@ PluginExecutionLog extends BaseEntity {
 | `PluginType` | API, SCRIPT |
 | `PluginTrigger` | ON_BLUR, ON_SUBMIT |
 | `PluginFailBehavior` | HARD_BLOCK, SOFT_WARN, ADVISORY |
+| `FileStatus` | PENDING, READY, VIRUS_DETECTED, DELETED |
 
 ---
 
@@ -1034,12 +1130,18 @@ PluginExecutionLog extends BaseEntity {
 - **XState workflow definitions** (compiled machine cache)
 - **Current task machine states** (fast state lookups)
 - Queue statistics and pending task counts
+- **Analytics aggregates** (Analytics Service):
+  - `analytics:dashboard:{customerId|projectId}` — TTL 300 s, invalidated by `task.completed`
+  - `analytics:quality:{projectId}` — TTL 300 s, invalidated by `quality_check.completed`
+  - `analytics:project:{projectId}` — TTL 300 s, invalidated by `batch.completed`
+  - `analytics:productivity:{userId}` — TTL 60 s
 
 ### Read Replicas
-- Reporting and analytics queries
-- Export generation
+- Reporting and analytics queries (Analytics Service points to `ANALYTICS_DB_HOST` — read replica in production)
+- Export generation (Export Service bulk-reads tasks + annotations)
 - Dashboard metrics
 - State transition history queries
+- Audit log queries (Audit Service `AUDIT_DB_HOST`)
 
 ### XState-Specific Optimizations
 - **State Machine Cache**: Compiled XState machine definitions cached in-memory
@@ -1062,6 +1164,11 @@ Each service configures TypeORM's `extra.max` pool via `DB_POOL_SIZE` env var:
 | Annotation QA | 15 |
 | Workflow Engine | 15 |
 | Auth Service | 10 |
+| File Storage Service | 10 |
+| Export Service | 10 |
+| Notification Service | 10 |
+| Analytics Service | 10 |
+| Audit Service | 10 |
 
 In production, a **PgBouncer** instance in transaction-pooling mode sits in front of Postgres to multiplex these pools down to 30–40 actual server connections.
 
@@ -1128,4 +1235,67 @@ The following endpoints should be routed to a read replica via TypeORM replicati
 - `GET /quality-checks/project/:id/metrics`
 - `GET /tasks/time-analytics`
 - `GET /state-transitions` (audit reads)
-- `GET /audit-logs`
+- `GET /audit-logs` (Audit Service — all read endpoints)
+- `GET /analytics/*` (Analytics Service — all endpoints; `ANALYTICS_DB_HOST` env var)
+- Export job processing (bulk Task + Annotation reads in Export Service)
+
+---
+
+## Shared Infrastructure
+
+### Kafka Topic Registry
+All Kafka topic strings are centralized in `libs/common/src/constants/kafka-topics.ts` as `KAFKA_TOPICS`. Services import this constant instead of using raw strings.
+
+| Constant | Topic String |
+|----------|-------------|
+| `TASK_CREATED` | `task.created` |
+| `TASK_UPDATED` | `task.updated` |
+| `TASK_ASSIGNED` | `task.assigned` |
+| `TASK_COMPLETED` | `task.completed` |
+| `TASK_SUBMITTED` | `task.submitted` |
+| `TASK_STATE_CHANGED` | `task.state_changed` |
+| `BATCH_CREATED` | `batch.created` |
+| `BATCH_UPDATED` | `batch.updated` |
+| `BATCH_COMPLETED` | `batch.completed` |
+| `ANNOTATION_SUBMITTED` | `annotation.submitted` |
+| `ANNOTATION_UPDATED` | `annotation.updated` |
+| `ANNOTATION_DRAFT_SAVED` | `annotation.draft_saved` |
+| `QUALITY_CHECK_COMPLETED` | `quality_check.completed` |
+| `QUALITY_CHECK_FAILED` | `quality_check.failed` |
+| `ASSIGNMENT_CREATED` | `assignment.created` |
+| `ASSIGNMENT_EXPIRED` | `assignment.expired` |
+| `STATE_TRANSITIONED` | `state.transitioned` |
+| `FILE_UPLOADED` | `file.uploaded` |
+| `FILE_DELETED` | `file.deleted` |
+| `EXPORT_COMPLETED` | `export.completed` |
+| `EXPORT_FAILED` | `export.failed` |
+| `NOTIFICATION_SEND` | `notification.send` |
+| `USER_REGISTERED` | `user.registered` |
+| `USER_LOGGED_IN` | `user.logged_in` |
+
+### Kafka Event Envelope
+All Kafka messages published via `KafkaService.publishEvent()` (or `createKafkaEvent()` from `@app/common`) are wrapped in a standard envelope:
+
+```ts
+interface KafkaEventEnvelope<T = Record<string, any>> {
+  eventId: string;        // UUID v4 — for deduplication
+  eventType: string;      // e.g. 'task.created'
+  timestamp: string;      // ISO 8601
+  version: string;        // '1.0' — for schema evolution
+  source: string;         // emitting service: 'task-management'
+  correlationId?: string; // trace ID for request chaining
+  payload: T;             // domain-specific event data
+}
+```
+
+`KafkaService.publishEvent(topic, payload, source?, correlationId?)` auto-generates `eventId`, `timestamp`, `version`, and `source` (defaults to `clientId` from `KafkaModuleOptions`).
+
+### Audit Logging Strategy
+Two complementary mechanisms write to `audit_logs`:
+
+| Mechanism | Trigger | Timing | Context |
+|-----------|---------|--------|---------|
+| `AuditInterceptor` | HTTP POST/PATCH/PUT/DELETE | Synchronous (same request) | HTTP-level: `entityId`, `userId`, `ipAddress`, `userAgent` |
+| Audit Service Kafka consumer | Domain events on all topics | Asynchronous | Business-level: topic, payload fields, `kafkaOffset` |
+
+Both write to the shared `audit_logs` table. The interceptor is the primary source of truth for immediate CRUD; the Kafka consumer adds richer business context that spans multiple services.

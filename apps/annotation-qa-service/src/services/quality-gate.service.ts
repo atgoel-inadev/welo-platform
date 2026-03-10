@@ -1,8 +1,8 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { QualityCheck, QualityCheckType, QualityCheckStatus, Project, Task, Annotation } from '@app/common';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE } from '@app/infrastructure';
 import { StateManagementService } from '../state-management/state-management.service';
 
 /**
@@ -29,7 +29,8 @@ export class QualityGateService {
     private readonly taskRepo: Repository<Task>,
     @InjectRepository(Annotation)
     private readonly annotationRepo: Repository<Annotation>,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
     private readonly stateManagement: StateManagementService,
   ) {}
 
@@ -388,7 +389,7 @@ export class QualityGateService {
   ): Promise<void> {
     const workflowConfig: any = task.project.configuration?.workflowConfiguration;
     
-    await this.kafkaService.publishEvent('quality_gate.checked', {
+    await this.messagingService.publishEvent('quality_gate.checked', {
       id: qc.id,
       taskId: task.id,
       projectId: task.projectId,
@@ -399,7 +400,7 @@ export class QualityGateService {
     });
 
     if (!passed) {
-      await this.kafkaService.publishEvent('quality_gate.failed', {
+      await this.messagingService.publishEvent('quality_gate.failed', {
         id: qc.id,
         taskId: task.id,
         stageId,

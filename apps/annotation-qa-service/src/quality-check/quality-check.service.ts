@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { QualityCheck, QualityCheckType, QualityCheckStatus, QualityRule, Annotation, Task, Project } from '@app/common';
@@ -6,7 +6,7 @@ import { CreateQualityCheckDto, ResolveQualityCheckDto, CreateQualityRuleDto } f
 import { QualityRulesEngine } from './quality-rules.engine';
 import { GoldTaskService } from '../gold-task/gold-task.service';
 import { StateManagementService } from '../state-management/state-management.service';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE } from '@app/infrastructure';
 
 @Injectable()
 export class QualityCheckService {
@@ -26,7 +26,8 @@ export class QualityCheckService {
     private readonly rulesEngine: QualityRulesEngine,
     private readonly goldTaskService: GoldTaskService,
     private readonly stateManagement: StateManagementService,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
   ) {}
 
   /**
@@ -82,7 +83,7 @@ export class QualityCheckService {
 
     // 5. Publish event and trigger state transition
     const eventType = passed ? 'auto_qc.passed' : 'auto_qc.failed';
-    await this.kafkaService.publishEvent(eventType, {
+    await this.messagingService.publishEvent(eventType, {
       id: qc.id,
       taskId,
       annotationId,
@@ -90,7 +91,7 @@ export class QualityCheckService {
       issues,
     });
 
-    await this.kafkaService.publishEvent('quality_check.completed', {
+    await this.messagingService.publishEvent('quality_check.completed', {
       id: qc.id,
       taskId,
       annotationId,
@@ -127,7 +128,7 @@ export class QualityCheckService {
       }),
     );
 
-    await this.kafkaService.publishEvent('quality_check.completed', {
+    await this.messagingService.publishEvent('quality_check.completed', {
       id: qc.id,
       taskId,
       annotationId: dto.annotationId,

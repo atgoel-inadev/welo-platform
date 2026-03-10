@@ -1,8 +1,8 @@
 import { Controller, Get, Post, Delete, Body, Param, Query, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { ExportService } from './export.service';
 import { CreateExportDto } from './dto/create-export.dto';
-import { ExportStatus } from '@app/common';
+import { ExportFilterDto } from './dto/export-filter.dto';
 
 @ApiTags('exports')
 @ApiBearerAuth()
@@ -12,20 +12,15 @@ export class ExportController {
 
   @Get()
   @ApiOperation({ summary: 'List exports, optionally filtered by project/batch/status' })
-  @ApiQuery({ name: 'projectId', required: false })
-  @ApiQuery({ name: 'batchId', required: false })
-  @ApiQuery({ name: 'status', required: false, enum: ExportStatus })
-  @ApiQuery({ name: 'page', required: false, type: Number })
-  @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Exports retrieved' })
-  async listExports(
-    @Query('projectId') projectId?: string,
-    @Query('batchId') batchId?: string,
-    @Query('status') status?: ExportStatus,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.exportService.listExports(projectId, batchId, status, Number(page) || 1, Number(limit) || 20);
+  async listExports(@Query() filter: ExportFilterDto) {
+    return this.exportService.listExports(
+      filter.projectId,
+      filter.batchId,
+      filter.status,
+      filter.page ?? 1,
+      filter.limit ?? 20,
+    );
   }
 
   @Get(':id')

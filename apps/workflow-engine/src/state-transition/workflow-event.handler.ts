@@ -1,5 +1,5 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { KafkaService } from '@app/infrastructure';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
+import { IMessagingService, MESSAGING_SERVICE, MessagePayload } from '@app/infrastructure';
 import { StateTransitionService } from './state-transition.service';
 
 /**
@@ -15,7 +15,8 @@ export class WorkflowEventHandler implements OnModuleInit {
   private readonly logger = new Logger(WorkflowEventHandler.name);
 
   constructor(
-    private kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private messagingService: IMessagingService,
     private stateTransitionService: StateTransitionService,
   ) {}
 
@@ -25,9 +26,9 @@ export class WorkflowEventHandler implements OnModuleInit {
 
   private async subscribeToEvents() {
     // Subscribe to annotation.submitted events
-    await this.kafkaService.subscribe('annotation.submitted', async (payload) => {
+    await this.messagingService.subscribe('annotation.submitted', async (payload: MessagePayload) => {
       try {
-        const message = JSON.parse(payload.message.value.toString());
+        const message = payload.value;
         this.logger.log(`[Event Received] annotation.submitted for task ${message.taskId || message.data?.taskId}`);
         
         const taskId = message.taskId || message.data?.taskId;
@@ -45,9 +46,9 @@ export class WorkflowEventHandler implements OnModuleInit {
     });
 
     // Subscribe to quality_check.completed events (for future enhancement)
-    await this.kafkaService.subscribe('quality_check.completed', async (payload) => {
+    await this.messagingService.subscribe('quality_check.completed', async (payload: MessagePayload) => {
       try {
-        const message = JSON.parse(payload.message.value.toString());
+        const message = payload.value;
         this.logger.log(`[Event Received] quality_check.completed for task ${message.taskId || message.data?.taskId}`);
         
         // Future: Implement quality gate logic

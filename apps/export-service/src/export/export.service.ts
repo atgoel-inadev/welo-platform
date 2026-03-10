@@ -1,8 +1,8 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Export, ExportStatus } from '@app/common';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE } from '@app/infrastructure';
 import { CreateExportDto } from './dto/create-export.dto';
 import { ExportJobProcessor } from './jobs/export-job.processor';
 
@@ -13,7 +13,8 @@ export class ExportService {
   constructor(
     @InjectRepository(Export)
     private readonly exportRepo: Repository<Export>,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
     private readonly jobProcessor: ExportJobProcessor,
   ) {}
 

@@ -70,6 +70,28 @@ services:
     networks:
       - welo-network
 
+  # ── Jaeger All-in-One (OpenTelemetry trace backend) ───────────────
+  # OTLP HTTP receiver: :4318  (services send traces here)
+  # OTLP gRPC receiver: :4317
+  # Jaeger UI:          :16686 (browse traces at http://localhost:16686)
+  jaeger:
+    image: jaegertracing/all-in-one:1.56
+    container_name: welo-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:14269/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - welo-network
+
   # Workflow Engine Service
   workflow-engine:
     build:
@@ -90,6 +112,7 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: workflow-engine
       KAFKA_GROUP_ID: workflow-engine-group
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3001:3001"
     depends_on:
@@ -98,6 +121,8 @@ services:
       redis:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
     networks:
       - welo-network
@@ -125,6 +150,7 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: auth-service
       KAFKA_GROUP_ID: auth-service-group
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3002:3002"
     depends_on:
@@ -133,6 +159,8 @@ services:
       redis:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
     networks:
       - welo-network
@@ -158,6 +186,7 @@ services:
       KAFKA_CLIENT_ID: task-management
       KAFKA_GROUP_ID: task-management-group
       PLUGIN_SECRETS_KEY: 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3003:3003"
     depends_on:
@@ -166,6 +195,8 @@ services:
       redis:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
     networks:
       - welo-network
@@ -191,6 +222,7 @@ services:
       KAFKA_CLIENT_ID: annotation-qa-service
       KAFKA_GROUP_ID: annotation-qa-service-group
       WORKFLOW_ENGINE_URL: http://workflow-engine:3001/api/v1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3005:3005"
     depends_on:
@@ -199,6 +231,8 @@ services:
       redis:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
       workflow-engine:
         condition: service_started
@@ -228,6 +262,7 @@ services:
       MEDIA_FILES_PATH: /app/media
       ENABLE_DIRECTORY_SCAN: "true"  # Enable directory scan mode for demo
       PLUGIN_SECRETS_KEY: 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "3004:3004"
     volumes:
@@ -238,6 +273,8 @@ services:
       redis:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
     networks:
       - welo-network
@@ -292,12 +329,203 @@ services:
     networks:
       - welo-network
 
+  # ── File Storage Service (port 3006) ──────────────────────────────
+  file-storage-service:
+    build:
+      context: .
+      dockerfile: ./docker/file-storage-service/Dockerfile
+    container_name: welo-file-storage-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      FILE_STORAGE_SERVICE_PORT: 3006
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: welo_platform
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: file-storage-service
+      KAFKA_GROUP_ID: file-storage-group
+      STORAGE_TYPE: local
+      MEDIA_FILES_PATH: /app/media
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports:
+      - "3006:3006"
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+    networks:
+      - welo-network
+
+  # ── Export Service (port 3007) ─────────────────────────────────────
+  export-service:
+    build:
+      context: .
+      dockerfile: ./docker/export-service/Dockerfile
+    container_name: welo-export-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      EXPORT_SERVICE_PORT: 3007
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: welo_platform
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: export-service
+      KAFKA_GROUP_ID: export-group
+      EXPORT_DIR: /app/exports
+      EXPORT_EXPIRY_DAYS: 30
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports:
+      - "3007:3007"
+    volumes:
+      - export_data:/app/exports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+    networks:
+      - welo-network
+
+  # ── Notification Service (port 3008) ──────────────────────────────
+  notification-service:
+    build:
+      context: .
+      dockerfile: ./docker/notification-service/Dockerfile
+    container_name: welo-notification-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NOTIFICATION_SERVICE_PORT: 3008
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: welo_platform
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: notification-service
+      KAFKA_GROUP_ID: notification-group
+      EMAIL_PROVIDER: console
+      FROM_EMAIL: noreply@welo.ai
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports:
+      - "3008:3008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+    networks:
+      - welo-network
+
+  # ── Analytics Service (port 3009) ─────────────────────────────────
+  analytics-service:
+    build:
+      context: .
+      dockerfile: ./docker/analytics-service/Dockerfile
+    container_name: welo-analytics-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      ANALYTICS_SERVICE_PORT: 3009
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: welo_platform
+      ANALYTICS_DB_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: analytics-service
+      KAFKA_GROUP_ID: analytics-group
+      ANALYTICS_CACHE_TTL_SECONDS: 300
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports:
+      - "3009:3009"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+    networks:
+      - welo-network
+
+  # ── Audit Service (port 3010) ──────────────────────────────────────
+  audit-service:
+    build:
+      context: .
+      dockerfile: ./docker/audit-service/Dockerfile
+    container_name: welo-audit-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      AUDIT_SERVICE_PORT: 3010
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: welo_platform
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: audit-service
+      KAFKA_GROUP_ID: audit-group
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports:
+      - "3010:3010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+    networks:
+      - welo-network
+
 volumes:
   postgres_data:
     driver: local
   redis_data:
     driver: local
   kafka_data:
+    driver: local
+  media_data:
+    driver: local
+  export_data:
     driver: local
 
 networks:

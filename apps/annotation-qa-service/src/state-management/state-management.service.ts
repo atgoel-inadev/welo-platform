@@ -1,9 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task, TaskStatus, Project } from '@app/common';
 import { WorkflowEngineClient } from './workflow-engine.client';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE } from '@app/infrastructure';
 
 export interface EvaluationResult {
   taskId: string;
@@ -26,7 +26,8 @@ export class StateManagementService {
     @InjectRepository(Project)
     private readonly projectRepo: Repository<Project>,
     private readonly workflowClient: WorkflowEngineClient,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
   ) {}
 
   /**
@@ -81,7 +82,7 @@ export class StateManagementService {
       task.allReviewsApproved = true;
       await this.taskRepo.save(task);
 
-      await this.kafkaService.publishEvent('task.approved', {
+      await this.messagingService.publishEvent('task.approved', {
         id: taskId,
         taskId,
         reviewerId,
@@ -98,7 +99,7 @@ export class StateManagementService {
       task.attemptCount = (task.attemptCount || 0) + 1;
       await this.taskRepo.save(task);
 
-      await this.kafkaService.publishEvent('task.state_changed', {
+      await this.messagingService.publishEvent('task.state_changed', {
         id: taskId,
         taskId,
         previousStatus: 'pendingReview',
@@ -119,18 +120,18 @@ export class StateManagementService {
         task.status = TaskStatus.REJECTED;
         await this.taskRepo.save(task);
 
-        await this.kafkaService.publishEvent('task.escalated', {
+        await this.messagingService.publishEvent('task.escalated', {
           id: taskId,
           taskId,
           attempts,
           reason,
         });
 
-        await this.kafkaService.publishNotification({
+        await this.messagingService.publishNotification({
           userId: 'manager',
           type: 'SYSTEM_ALERT',
           title: 'Task Escalated',
-          message: `Task ${taskId} has been rejected ${attempts} times and requires manager review.`,
+          message: `Task ${taskId} has been rejected ${this.maxAttempts} times and requires manager review.`,
           metadata: { taskId, attempts, reviewerId },
         });
       } else {
@@ -142,7 +143,7 @@ export class StateManagementService {
         task.status = TaskStatus.QUEUED;
         await this.taskRepo.save(task);
 
-        await this.kafkaService.publishEvent('task.rejected_to_queue', {
+        await this.messagingService.publishEvent('task.rejected_to_queue', {
           id: taskId,
           taskId,
           reviewerId,
@@ -153,7 +154,7 @@ export class StateManagementService {
 
         // Notify the annotator
         if (task.assignmentId) {
-          await this.kafkaService.publishNotification({
+          await this.messagingService.publishNotification({
             userId: task.assignmentId,
             type: 'FEEDBACK_RECEIVED',
             title: 'Task Rejected',

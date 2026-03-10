@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Task, Project, Assignment } from '@app/common';
-import { KafkaModule } from '@app/infrastructure';
+import { MessagingModule } from '@app/infrastructure';
 import { StateTransitionService } from './state-transition.service';
 import { WorkflowEventHandler } from './workflow-event.handler';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Task, Project, Assignment]),
-    KafkaModule,
+    MessagingModule,
   ],
   providers: [
     StateTransitionService,

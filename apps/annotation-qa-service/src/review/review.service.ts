@@ -1,10 +1,10 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ReviewApproval, ReviewApprovalStatus, Annotation, QualityCheck, QualityCheckStatus, Task } from '@app/common';
 import { SubmitReviewDto, ReviewDecision } from './dto/review.dto';
 import { StateManagementService } from '../state-management/state-management.service';
-import { KafkaService } from '@app/infrastructure';
+import { IMessagingService, MESSAGING_SERVICE } from '@app/infrastructure';
 
 @Injectable()
 export class ReviewService {
@@ -20,7 +20,8 @@ export class ReviewService {
     @InjectRepository(Task)
     private readonly taskRepo: Repository<Task>,
     private readonly stateManagement: StateManagementService,
-    private readonly kafkaService: KafkaService,
+    @Inject(MESSAGING_SERVICE)
+    private readonly messagingService: IMessagingService,
   ) {}
 
   async submitReview(taskId: string, reviewerId: string, dto: SubmitReviewDto) {
@@ -66,7 +67,7 @@ export class ReviewService {
     const autoQcScore = latestQc ? Number(latestQc.qualityScore) : 70;
 
     // Publish review submitted event
-    await this.kafkaService.publishEvent('review.submitted', {
+    await this.messagingService.publishEvent('review.submitted', {
       id: review.id,
       taskId,
       annotationId: dto.annotationId,

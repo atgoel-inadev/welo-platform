@@ -1,5 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger, Inject } from '@nestjs/common';
 import { Kafka, Producer, Consumer, Admin, EachMessagePayload } from 'kafkajs';
+import { v4 as uuidv4 } from 'uuid';
+import { context as otelContext, propagation } from '@opentelemetry/api';
 import { KafkaModuleOptions } from './kafka.interface';
 
 @Injectable()
@@ -89,6 +91,13 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Inject W3C TraceContext into Kafka message headers for async trace propagation
+    const traceHeaders: Record<string, string> = {};
+    propagation.inject(otelContext.active(), traceHeaders);
+    const kafkaHeaders = Object.fromEntries(
+      Object.entries(traceHeaders).map(([k, v]) => [k, Buffer.from(v)]),
+    );
+
     try {
       await this.producer.send({
         topic,
@@ -97,6 +106,7 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
             key: message.id || message.taskId || Date.now().toString(),
             value: JSON.stringify(message),
             timestamp: Date.now().toString(),
+            headers: kafkaHeaders,
           },
         ],
       });
@@ -219,10 +229,15 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async publishEvent(topic: string, payload: any): Promise<void> {
+  async publishEvent(topic: string, payload: any, source?: string, correlationId?: string): Promise<void> {
     await this.publish(topic, {
-      ...payload,
+      eventId: uuidv4(),
+      eventType: topic,
       timestamp: new Date().toISOString(),
+      version: '1.0',
+      source: source ?? this.options.clientId,
+      ...(correlationId && { correlationId }),
+      payload,
     });
   }
 }
